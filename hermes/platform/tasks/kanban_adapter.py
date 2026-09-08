@@ -386,19 +386,30 @@ class KanbanAdapter:
                 acceptance=acceptance or [],
                 completed_at=time.time(),
             )
-            # Delta 55 (auto-approve): o engine aceita automaticamente o
-            # resultado da própria execução — foco em eficiência, sem gate
-            # humano por card (auditoria virou ruído). Se o chamador passou
-            # acceptance/veredito explícito (gate humano pedido), respeita e
-            # não sobrescreve.
-            if task_result.reviewer_verdict is None and not acceptance:
-                task_result.reviewer_verdict = "approved"
-                task_result.acceptance = [{
-                    "stage": "auto_accept",
-                    "status": "passed",
-                    "approver": "engine:auto",
-                    "timestamp": task_result.completed_at,
-                }]
+            # Check evidence before auto-approving
+            test_ev = task_result.evidence.get("tests", {}) if isinstance(task_result.evidence, dict) else {}
+            has_failed_tests = isinstance(test_ev, dict) and (test_ev.get("failed", 0) > 0 or test_ev.get("errors", 0) > 0)
+
+            if not acceptance and task_result.reviewer_verdict != "rejected":
+                if has_failed_tests:
+                    task_result.reviewer_verdict = "rejected"
+                    task_result.acceptance = [{
+                        "stage": "auto_accept",
+                        "status": "failed",
+                        "approver": "engine:auto",
+                        "timestamp": task_result.completed_at,
+                        "rationale": f"Rejected due to failing tests in evidence: {test_ev}",
+                    }]
+                    self._store_result(task_id, task_result)
+                    return False
+                else:
+                    task_result.reviewer_verdict = "approved"
+                    task_result.acceptance = [{
+                        "stage": "auto_accept",
+                        "status": "passed",
+                        "approver": "engine:auto",
+                        "timestamp": task_result.completed_at,
+                    }]
             self._store_result(task_id, task_result)
 
             if self.event_sink is not None and getattr(self.event_sink, "available", lambda: True)():

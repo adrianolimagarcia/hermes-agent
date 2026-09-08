@@ -104,16 +104,21 @@ class EventStore:
         Replay incremental: guarde o ``seq`` do último evento processado e
         chame com ele. ``limit`` pega a cauda (mais recentes) após o corte."""
         conn = self._get_connection()
-        sql = "SELECT * FROM events WHERE seq > ?"
         params: List[Any] = [seq]
+        where_clause = "WHERE seq > ?"
         if trace_id is not None:
-            sql += " AND trace_id = ?"
+            where_clause += " AND trace_id = ?"
             params.append(trace_id)
-        sql += " ORDER BY seq ASC, timestamp ASC"
+
+        if limit is not None:
+            # Query the tail using subquery ordered by seq DESC LIMIT ? then re-order ASC
+            sql = f"SELECT * FROM (SELECT * FROM events {where_clause} ORDER BY seq DESC, timestamp DESC LIMIT ?) ORDER BY seq ASC, timestamp ASC"
+            params.append(int(limit))
+        else:
+            sql = f"SELECT * FROM events {where_clause} ORDER BY seq ASC, timestamp ASC"
+
         cursor = conn.execute(sql, params)
         rows = cursor.fetchall()
-        if limit is not None:
-            rows = rows[-limit:]
         events = self._rows_to_events(rows)
         if not self._conn:
             conn.close()
@@ -153,15 +158,20 @@ class EventStore:
         """Todos os eventos (opcionalmente filtrados por nome), mais antigos
         primeiro — a janela que o Ouroboros alimentado varre por sinais."""
         conn = self._get_connection()
+        params: List[Any] = []
+        where_clause = ""
         if name is not None:
-            cursor = conn.execute(
-                "SELECT * FROM events WHERE name = ? ORDER BY seq ASC, timestamp ASC", (name,)
-            )
-        else:
-            cursor = conn.execute("SELECT * FROM events ORDER BY seq ASC, timestamp ASC")
-        rows = cursor.fetchall()
+            where_clause = "WHERE name = ?"
+            params.append(name)
+
         if limit is not None:
-            rows = rows[-limit:]
+            sql = f"SELECT * FROM (SELECT * FROM events {where_clause} ORDER BY seq DESC, timestamp DESC LIMIT ?) ORDER BY seq ASC, timestamp ASC"
+            params.append(int(limit))
+        else:
+            sql = f"SELECT * FROM events {where_clause} ORDER BY seq ASC, timestamp ASC"
+
+        cursor = conn.execute(sql, params)
+        rows = cursor.fetchall()
         events = self._rows_to_events(rows)
         if not self._conn:
             conn.close()

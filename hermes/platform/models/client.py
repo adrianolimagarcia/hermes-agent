@@ -107,7 +107,13 @@ class ExactModelClient:
         transport_fn: Optional[TransportFn] = None,
         timeout_sec: float = 30.0,
     ):
-        self.cb = circuit_breaker or CircuitBreaker()
+        if circuit_breaker is not None:
+            self.cb = circuit_breaker
+        elif router is not None:
+            self.cb = router.circuit_breaker
+        else:
+            self.cb = CircuitBreaker()
+
         self.router = router or ExactModelRouter(circuit_breaker=self.cb)
         self.transport_fn = transport_fn or default_http_transport
         self.timeout_sec = timeout_sec
@@ -218,6 +224,15 @@ class ExactModelClient:
                 attempted_errors.append(f"{route.provider_id} connection error: {exc}")
 
         # If all routes were attempted and failed, fail-closed without model degradation
+        from hermes.platform.models.provider_router import _emit_route_exhausted
+        _emit_route_exhausted({
+            "model_family": profile.model_identity.family,
+            "model_variant": profile.model_identity.variant,
+            "exhausted_providers": [r.provider_id for r in routes],
+            "timestamp": time.time(),
+            "profile_id": profile.id,
+            "errors": attempted_errors,
+        })
         raise ModelRouteExhaustedException(
             f"All provider routes for model {profile.model_identity.family}:{profile.model_identity.variant} "
             f"failed or were open. Errors: {'; '.join(attempted_errors)}"

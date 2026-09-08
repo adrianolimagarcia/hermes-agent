@@ -161,6 +161,16 @@ class ContextBudgeter:
                 for item in items:
                     rep = "summary" if self.policy.prefer_summaries else "full"
                     cost = max(1, len(item.get_representation(rep)) // 4)
+                    if current_tokens + cost > self.total_budget:
+                        manifest.record_exclusion(
+                            item=item,
+                            reason=f"Protected section token budget exceeded: required {cost} tokens, remaining {self.total_budget - current_tokens}",
+                            score=1.0,
+                        )
+                        raise ValueError(
+                            f"Protected section '{sec}' exceeds total token budget "
+                            f"({current_tokens + cost} > {self.total_budget})"
+                        )
                     selected_sections[sec].append(item)
                     representations[item.id] = rep
                     current_tokens += cost

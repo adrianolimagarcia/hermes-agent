@@ -120,13 +120,46 @@ class HAOSDispatcher:
         out = worker.execute(task_id, workspace, spec, **extra_kwargs)
         if guard is not None:
             out = guard.gate_outputs(out)
-        self.adapter.complete_task(
+        # Review Pipeline validation: if spec specifies review_stages, execute them
+        spec_dict = spec if isinstance(spec, dict) else (getattr(spec, "to_dict", None)() if hasattr(spec, "to_dict") else {})
+        if spec_dict.get("review_stages"):
+            from hermes.platform.tasks.review_pipeline import ReviewPipeline
+            from hermes.platform.tasks.spec import TaskSpec
+            try:
+                task_spec = TaskSpec.from_dict(spec_dict)
+                pipeline = ReviewPipeline()
+                verdicts = pipeline.run(
+                    task_spec,
+                    evidence=out.get("evidence") or {},
+                    residual_risk=out.get("residual_risk") or [],
+                    summary=out.get("summary") or "",
+                )
+                if any(not v.approved for v in verdicts):
+                    reasons = [f"[{v.stage_id}] {v.rationale}" for v in verdicts if not v.approved]
+                    raise ContractViolationError([f"Review pipeline rejected execution: {'; '.join(reasons)}"])
+            except ContractViolationError:
+                raise
+            except Exception as ex:
+                # Se houver erro de parsing ou validação e houver testes falhos na evidência
+                tests_evidence = (out.get("evidence") or {}).get("tests") or {}
+                if isinstance(tests_evidence, dict) and tests_evidence.get("failed", 0) > 0:
+                    raise ContractViolationError([f"Review pipeline failed with failing tests in evidence: {ex}"])
+
+        # Check evidence for explicit test failures if present
+        tests_evidence = (out.get("evidence") or {}).get("tests") or {}
+        if isinstance(tests_evidence, dict) and tests_evidence.get("failed", 0) > 0:
+            if spec_dict.get("review_stages"):
+                raise ContractViolationError([f"Execution has failing tests ({tests_evidence['failed']}) under required review stages"])
+
+        completed = self.adapter.complete_task(
             task_id,
             summary=out.get("summary") or "",
-            evidence={**(out.get("evidence") or {}), "lane": lane},
             artifacts=out.get("artifacts") or [],
+            evidence=out.get("evidence") or {},
             residual_risk=out.get("residual_risk") or [],
         )
+        if not completed:
+            raise RuntimeError(f"complete_task failed for task {task_id}")
 
     def _run_and_complete(self, task_id: str, workspace: Path) -> None:
         spec = (self.adapter.get_task(task_id) or {}).get("spec") or {}
@@ -227,62 +260,63 @@ class HAOSDispatcher:
             self.adapter.record_run_start(claimed.id, run_id=claimed.current_run_id,
                                           worker_id=worker_id)
             try:
-                workspace = kbw.resolve_workspace(claimed, board=self.board)
-                kbw.set_workspace_path(conn, claimed.id, str(workspace))
-            except (ValueError, OSError) as exc:
-                self.adapter.record_task_failure(
-                    claimed.id,
-                    f"workspace resolution failed: {exc}",
-                    outcome="workspace_unresolvable",
+                try:
+                    workspace = kbw.resolve_workspace(claimed, board=self.board)
+                    kbw.set_workspace_path(conn, claimed.id, str(workspace))
+                except (ValueError, OSError) as exc:
+                    self.adapter.record_task_failure(
+                        claimed.id,
+                        f"workspace resolution failed: {exc}",
+                        outcome="workspace_unresolvable",
+                    )
+                    continue
+                # Emenda 8 (claim path): required_agents é allow-list de lanes —
+                # card destinado a outro agente não roda nesta lane (falha rápida
+                # com orçamento, como os demais outcomes de falha).
+                spec = (self.adapter.get_task(claimed.id) or {}).get("spec") or {}
+                lane = lane_for_spec(spec)
+                eligible, _ = agent_eligibility(
+                    spec.get("required_agents") or [],
+                    spec.get("preferred_agents") or [],
+                    lane,
                 )
-                continue
-            # Emenda 8 (claim path): required_agents é allow-list de lanes —
-            # card destinado a outro agente não roda nesta lane (falha rápida
-            # com orçamento, como os demais outcomes de falha).
-            spec = (self.adapter.get_task(claimed.id) or {}).get("spec") or {}
-            lane = lane_for_spec(spec)
-            eligible, _ = agent_eligibility(
-                spec.get("required_agents") or [],
-                spec.get("preferred_agents") or [],
-                lane,
-            )
-            if not eligible:
-                self.adapter.record_task_failure(
-                    claimed.id,
-                    f"lane/agent '{lane}' not in required_agents "
-                    f"{list(spec.get('required_agents') or [])}",
-                    outcome="agent_required_missing",
-                )
-                continue
-            # D3: renova o claim enquanto o filho da lane vive. O renew usa o
-            # MESMO worker_id do claim (claim_lock = worker_id) e só acontece
-            # quando o worker aceita heartbeat_fn (lane agêntica real); senão,
-            # comportamento legado (wait único + TTL upstream).
-            hb_fn: Optional[Callable[[str], bool]] = None
-            worker = self.lane_worker or get_lane_worker(lane)
-            if heartbeat_fn is not None or self._accepts_heartbeat(worker):
-                if heartbeat_fn is None:
-                    hb_fn = lambda tid: self.adapter.heartbeat(tid, worker_id=worker_id)
-                else:
-                    hb_fn = heartbeat_fn
-                if heartbeat_interval is None:
-                    heartbeat_interval = max(float(ttl_seconds or 45) / 3.0, 5.0)
-            try:
-                self._run_and_complete_with_heartbeat(
-                    claimed.id, workspace, hb_fn=hb_fn,
-                    heartbeat_interval=heartbeat_interval,
-                )
-            except (LaneError, ContractViolationError, OSError) as exc:
-                # Hardening (Fase 1): falha da lane NÃO deixa o card preso em
-                # 'running' até o TTL — o orçamento do kernel (release_claim +
-                # consecutive_failures + auto-block no limite) decide o destino.
-                outcome = ("contract_violation" if isinstance(exc, ContractViolationError)
-                           else "worker_crash")
-                self.adapter.record_task_failure(claimed.id, str(exc), outcome=outcome)
-                break  # falha sistêmica da lane: pare o tick (cards seguintes
-                # esperam o próximo tick; cada card tem seu próprio orçamento)
+                if not eligible:
+                    self.adapter.record_task_failure(
+                        claimed.id,
+                        f"lane/agent '{lane}' not in required_agents "
+                        f"{list(spec.get('required_agents') or [])}",
+                        outcome="agent_required_missing",
+                    )
+                    continue
+                # D3: renova o claim enquanto o filho da lane vive. O renew usa o
+                # MESMO worker_id do claim (claim_lock = worker_id) e só acontece
+                # quando o worker aceita heartbeat_fn (lane agêntica real); senão,
+                # comportamento legado (wait único + TTL upstream).
+                hb_fn: Optional[Callable[[str], bool]] = None
+                worker = self.lane_worker or get_lane_worker(lane)
+                if heartbeat_fn is not None or self._accepts_heartbeat(worker):
+                    if heartbeat_fn is None:
+                        hb_fn = lambda tid: self.adapter.heartbeat(tid, worker_id=worker_id)
+                    else:
+                        hb_fn = heartbeat_fn
+                    if heartbeat_interval is None:
+                        heartbeat_interval = max(float(ttl_seconds or 45) / 3.0, 5.0)
+                try:
+                    self._run_and_complete_with_heartbeat(
+                        claimed.id, workspace, hb_fn=hb_fn,
+                        heartbeat_interval=heartbeat_interval,
+                    )
+                except (LaneError, ContractViolationError, OSError) as exc:
+                    # Hardening (Fase 1): falha da lane NÃO deixa o card preso em
+                    # 'running' até o TTL — o orçamento do kernel (release_claim +
+                    # consecutive_failures + auto-block no limite) decide o destino.
+                    outcome = ("contract_violation" if isinstance(exc, ContractViolationError)
+                               else "worker_crash")
+                    self.adapter.record_task_failure(claimed.id, str(exc), outcome=outcome)
+                    break  # falha sistêmica da lane: pare o tick (cards seguintes
+                    # esperam o próximo tick; cada card tem seu próprio orçamento)
+                executed.append(claimed.id)
             finally:
                 if self.concurrency_guard is not None:
                     self.concurrency_guard.release(claimed.id)
-            executed.append(claimed.id)
         return executed

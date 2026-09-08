@@ -98,6 +98,23 @@ class ControlPlaneService:
         self.gateway = protocol_gateway
         self.kanban = kanban
         self._interventions: Dict[str, str] = {}  # worker_id -> intervention command
+        self._hydrate_interventions()
+
+    def _hydrate_interventions(self) -> None:
+        """Reidrata intervenções a partir do event store na inicialização."""
+        if not hasattr(self.event_store, "read_events"):
+            return
+        try:
+            events = self.event_store.read_events()
+            for ev in events:
+                if ev.name == "controlplane.intervention":
+                    payload = ev.payload or {}
+                    target_id = payload.get("target_id")
+                    action = payload.get("action")
+                    if target_id and action:
+                        self._interventions[target_id] = action
+        except Exception:
+            pass
 
     def get_overview(self) -> ControlPlaneOverview:
         events = self.event_store.read_events()
@@ -108,9 +125,8 @@ class ControlPlaneService:
                 mission_count = len(tasks)
             except Exception:
                 pass
-        mission_count = max(mission_count, 1)
 
-        total_tokens = sum(e.payload.get("tokens", 0) for e in events if "tokens" in e.payload)
+        total_tokens = sum(e.payload.get("tokens", 0) for e in events if "tokens" in (e.payload or {}))
 
         active_workers = self.runtime.pool.active_count() if self.runtime else 0
         if active_workers == 0 and self.kanban:
@@ -119,19 +135,20 @@ class ControlPlaneService:
                 active_workers = sum(1 for t in tasks if t.get("status") == "in_progress")
             except Exception:
                 pass
-        total_pool = self.runtime.pool.total_count() if self.runtime else max(4, active_workers)
+        total_pool = self.runtime.pool.total_count() if self.runtime else active_workers
         idle_workers = max(0, total_pool - active_workers)
 
-        cost = (total_tokens / 1000.0) * 0.001  # Estimativa
+        cost = (total_tokens / 1000.0) * 0.001 if total_tokens > 0 else 0.0  # Estimativa
 
+        has_activity = (active_workers > 0 or mission_count > 0 or total_tokens > 0)
         return ControlPlaneOverview(
             total_missions=mission_count,
             active_workers=active_workers,
             idle_specialists=max(0, idle_workers),
             total_tokens=total_tokens,
             total_cost_usd=round(cost, 4),
-            reputation_healthy_pct=100.0,
-            active_routes_count=2,
+            reputation_healthy_pct=100.0 if has_activity else 0.0,
+            active_routes_count=2 if has_activity else 0,
         )
 
     def build_team_graph(
@@ -325,11 +342,17 @@ class ControlPlaneService:
 
         # 1. Process EventStore events
         mission_events = []
-        for ev in reversed(events):
-            mission_events.append(ev)
-            if ev.name == "team.formed" and ev.payload.get("mission_id") == target_mission:
-                break
-        mission_events.reverse()
+        if target_mission:
+            for ev in events:
+                p = ev.payload or {}
+                if p.get("mission_id") == target_mission or p.get("team_id") == target_mission:
+                    mission_events.append(ev)
+        else:
+            for ev in reversed(events):
+                mission_events.append(ev)
+                if ev.name == "team.formed" and ev.payload.get("mission_id") == target_mission:
+                    break
+            mission_events.reverse()
 
         for ev in mission_events:
             p = ev.payload
@@ -384,11 +407,11 @@ class ControlPlaneService:
                     "role": role,
                     "posture": posture,
                     "status": "running" if p.get("status") in ("in_progress", "running") else "idle",
-                    "model": "deepseek-v4-flash",
-                    "provider": "a6api",
+                    "model": p.get("model") or "deepseek-v4-flash",
+                    "provider": p.get("provider") or "a6api",
                     "task": p.get("goal") or task_id,
-                    "tokens": 420,
-                    "cost": 0.0004,
+                    "tokens": p.get("tokens", 0),
+                    "cost": p.get("cost", 0.0),
                 }
             elif ev.name == "haos.task.completed":
                 task_id = p.get("task_id")
@@ -487,32 +510,36 @@ class ControlPlaneService:
                 coder_task = (ready_tasks[0].get("title") or ready_tasks[0].get("id")) if ready_tasks else ""
                 rev_task = ""
 
-            workers_dict = {
-                "specialist-coder-01": {
-                    "id": "specialist-coder-01",
-                    "label": "Polecat Coder",
-                    "role": "worker",
-                    "posture": "coder",
-                    "status": coder_st,
-                    "model": "deepseek-v4-flash",
-                    "provider": "a6api",
-                    "task": coder_task,
-                    "tokens": 620,
-                    "cost": 0.00062,
-                },
-                "specialist-reviewer-01": {
-                    "id": "specialist-reviewer-01",
-                    "label": "Witness Reviewer",
-                    "role": "reviewer",
-                    "posture": "reviewer",
-                    "status": rev_st,
-                    "model": "deepseek-v4-flash",
-                    "provider": "a6api",
-                    "task": rev_task,
-                    "tokens": 150,
-                    "cost": 0.00015,
-                },
-            }
+            # Check if there are actual kanban tasks before inventing dummy specialists
+            if kb_tasks:
+                workers_dict = {
+                    "specialist-coder-01": {
+                        "id": "specialist-coder-01",
+                        "label": "Polecat Coder",
+                        "role": "worker",
+                        "posture": "coder",
+                        "status": coder_st,
+                        "model": "deepseek-v4-flash",
+                        "provider": "a6api",
+                        "task": coder_task,
+                        "tokens": 0,
+                        "cost": 0.0,
+                    },
+                    "specialist-reviewer-01": {
+                        "id": "specialist-reviewer-01",
+                        "label": "Witness Reviewer",
+                        "role": "reviewer",
+                        "posture": "reviewer",
+                        "status": rev_st,
+                        "model": "deepseek-v4-flash",
+                        "provider": "a6api",
+                        "task": rev_task,
+                        "tokens": 0,
+                        "cost": 0.0,
+                    },
+                }
+            else:
+                workers_dict = {}
 
         # 4. Apply operator interventions
         for wid, w_info in workers_dict.items():

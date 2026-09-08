@@ -48,6 +48,16 @@ class ContextPolicy:
         if item.trust == TrustLevel.EXTERNAL_UNTRUSTED and not self.allow_external_untrusted:
             return False, f"external untrusted content not allowed for posture '{self.posture_name}'"
 
+        # Checagem de limiar mínimo de confiança
+        from hermes.platform.context.primitives.item import TRUST_ORDER
+        try:
+            item_trust_idx = TRUST_ORDER.index(item.trust)
+            min_trust_idx = TRUST_ORDER.index(self.min_trust_level)
+            if item_trust_idx > min_trust_idx:
+                return False, f"item trust '{item.trust.value}' lower than min_trust_level '{self.min_trust_level.value}'"
+        except ValueError:
+            pass
+
         # Checagem de whitelist se configurada
         if self.allowed_types and item.item_type not in self.allowed_types:
             return False, f"item_type '{item.item_type}' not in allowed list for posture '{self.posture_name}'"

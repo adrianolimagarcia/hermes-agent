@@ -80,10 +80,12 @@ class MergeQueue:
         repo_root: Optional[Path | str] = None,
         validator_fn: Optional[Callable[[MergeCandidate, Path], bool]] = None,
         target_branch: str = "main",
+        require_validator: bool = False,
     ) -> None:
         self.repo_root = Path(repo_root or Path.cwd()).resolve()
         self.validator_fn = validator_fn
         self.target_branch = target_branch
+        self.require_validator = require_validator
         self._queue: List[MergeCandidate] = []
         self._history: List[MergeCandidate] = []
 
@@ -168,6 +170,14 @@ class MergeQueue:
                 return candidate
 
             # 2. Run validation suite
+            if self.validator_fn is None and self.require_validator:
+                candidate.status = MergeStatus.REJECTED
+                candidate.rejection_reason = "No validator_fn configured: post-rebase verification is mandatory"
+                candidate.updated_at = time.time()
+                self._rollback_candidate(candidate)
+                self._history.append(candidate)
+                return candidate
+
             validation_passed = True
             if self.validator_fn:
                 try:
