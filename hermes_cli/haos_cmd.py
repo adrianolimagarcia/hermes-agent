@@ -243,6 +243,122 @@ def cmd_haos_doctor(args: argparse.Namespace) -> int:
     return HAOSDoctor.print_terminal_report(json_output=getattr(args, "json", False))
 
 
+def cmd_haos_evolution_status(args: argparse.Namespace) -> int:
+    """Executes 'hermes haos evolution status'."""
+    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.evolution.ledger import EvolutionLedger
+    import json
+
+    store = EventStore()
+    ledger = EvolutionLedger(store)
+    pending = ledger.pending()
+    history = ledger.history()
+
+    if getattr(args, "json", False):
+        print(json.dumps({"pending": pending, "history": history}, indent=2, ensure_ascii=False))
+        return 0
+
+    print("=" * 55)
+    print("      HAOS OUROBOROS — EVOLUTION ENGINE STATUS     ")
+    print("=" * 55)
+    print(f"Modo de Operação: SHADOW MODE (propostas aprovadas por humano)")
+    print(f"Propostas Pendentes : {len(pending)}")
+    print(f"Decisões Anteriores : {len(history)}")
+    print("-" * 55)
+
+    if not pending:
+        print("✓ Nenhuma proposta pendente no momento.")
+    else:
+        for p in pending:
+            pid = p.get("proposal_id", "?")
+            target = p.get("target", "?")
+            cur = p.get("current_profile", "?")
+            prop = p.get("proposed_profile", "?")
+            why = p.get("rationale", "")
+            print(f"• ID: {pid}")
+            print(f"  Target: {target} | Atual: {cur} ➔ Proposta: {prop}")
+            print(f"  Motivo: {why}")
+            print("-" * 55)
+    return 0
+
+
+def cmd_haos_evolution_analyze(args: argparse.Namespace) -> int:
+    """Executes 'hermes haos evolution analyze'."""
+    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.evolution.analyzer import OuroborosAnalyzer
+    from hermes.platform.evolution.ledger import EvolutionLedger
+    import json
+
+    store = EventStore()
+    analyzer = OuroborosAnalyzer()
+    ledger = EvolutionLedger(store)
+
+    proposals = analyzer.analyze_execution_history(event_store=store)
+    submitted = 0
+    for p in proposals:
+        try:
+            ledger.submit(p)
+            submitted += 1
+        except Exception:
+            pass
+
+    pending = ledger.pending()
+    if getattr(args, "json", False):
+        print(json.dumps({"submitted": submitted, "pending_count": len(pending), "proposals": proposals}, indent=2, ensure_ascii=False))
+        return 0
+
+    print("=" * 55)
+    print("      HAOS OUROBOROS — ANÁLISE DE EVOLUÇÃO         ")
+    print("=" * 55)
+    print(f"Novas propostas identificadas e submetidas: {submitted}")
+    print(f"Total de propostas aguardando decisão: {len(pending)}")
+    if submitted == 0:
+        print("✓ Nenhuma falha recorrente ou oportunidade de melhoria identificada nos eventos atuais.")
+    return 0
+
+
+def cmd_haos_evolution_blast_radius(args: argparse.Namespace) -> int:
+    """Executes 'hermes haos evolution blast-radius <files...>'."""
+    from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph, ImpactAnalyzer
+    import json
+
+    files = args.files or []
+    graph = CodeSymbolGraph()
+    analyzer = ImpactAnalyzer(graph)
+
+    try:
+        blast = analyzer.calculate_blast_radius(modified_files=files)
+        res = {
+            "impacted_files": list(blast.affected_files),
+            "impacted_callers": list(blast.affected_callers),
+            "impacted_tests": list(blast.affected_test_suites),
+            "risk_score": round(min(1.0, (len(blast.affected_files) * 0.15) + (len(blast.affected_callers) * 0.05)), 2),
+            "severity": blast.severity,
+        }
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+            return 0
+
+        print("=" * 55)
+        print("       HAOS OUROBOROS — BLAST RADIUS ANALYZER      ")
+        print("=" * 55)
+        print(f"Arquivos analisados   : {', '.join(files)}")
+        print(f"Severidade estimada   : {res['severity'].upper()}")
+        print(f"Pontuação de Risco    : {res['risk_score']}")
+        print(f"Arquivos impactados   : {len(res['impacted_files'])}")
+        print(f"Chamadores transitivos: {len(res['impacted_callers'])}")
+        print(f"Testes recomendados   : {len(res['impacted_tests'])}")
+        if res["impacted_tests"]:
+            print("\nSuítes recomendadas para validação:")
+            for t in res["impacted_tests"]:
+                print(f"  • {t}")
+        print("=" * 55)
+        return 0
+    except Exception as exc:
+        print(f"Erro ao calcular Blast Radius: {exc}")
+        return 1
+
+
 def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     """Builds and registers the parser for 'hermes haos'."""
     haos_parser = subparsers.add_parser(
@@ -261,6 +377,23 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     doctor_parser = haos_sub.add_parser("doctor", help="Valida a integridade, permissões e isolamento do HAOS")
     doctor_parser.add_argument("--json", action="store_true", help="Output doctor diagnostics as JSON")
     doctor_parser.set_defaults(func=cmd_haos_doctor)
+
+    # hermes haos evolution [status|analyze|blast-radius]
+    evo_parser = haos_sub.add_parser("evolution", aliases=["ouroboros"], help="Ouroboros Self-Evolution Engine & Blast Radius")
+    evo_sub = evo_parser.add_subparsers(dest="evolution_command")
+
+    evo_status_parser = evo_sub.add_parser("status", help="Exibe status do Ouroboros e propostas pendentes")
+    evo_status_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    evo_status_parser.set_defaults(func=cmd_haos_evolution_status)
+
+    evo_analyze_parser = evo_sub.add_parser("analyze", help="Analisa logs e métricas gerando propostas de evolução")
+    evo_analyze_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    evo_analyze_parser.set_defaults(func=cmd_haos_evolution_analyze)
+
+    evo_blast_parser = evo_sub.add_parser("blast-radius", help="Calcula o raio de impacto de arquivos modificados")
+    evo_blast_parser.add_argument("files", nargs="+", help="Caminho dos arquivos modificados")
+    evo_blast_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    evo_blast_parser.set_defaults(func=cmd_haos_evolution_blast_radius)
 
     # hermes haos federation ping <peer_id>
     fed_parser = haos_sub.add_parser("federation", help="HAOS Federation management")
