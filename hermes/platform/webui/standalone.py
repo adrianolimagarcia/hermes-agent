@@ -204,6 +204,123 @@ class HAOSStandaloneState:
                 continue
         return submitted
 
+    def get_task_details(self, task_id: str) -> Optional[Dict[str, Any]]:
+        task = self.kanban.get_task(task_id)
+        if not task:
+            return None
+        events = self.kanban.list_run_events(task_id)
+        ws_path = task.get("workspace_path")
+        log_content = ""
+        pid = None
+        if ws_path:
+            p = Path(ws_path)
+            log_file = p / ".haos" / "worker.log"
+            pid_file = p / ".haos" / "pid.txt"
+            if pid_file.is_file():
+                try:
+                    pid = int(pid_file.read_text(encoding="utf-8").strip())
+                except Exception:
+                    pass
+            if log_file.is_file():
+                try:
+                    size = log_file.stat().st_size
+                    with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                        if size > 65536:
+                            f.seek(size - 65536)
+                        log_content = f.read()
+                except Exception:
+                    pass
+        return {
+            **task,
+            "events": events,
+            "log_tail": log_content,
+            "pid": pid,
+        }
+
+    def cancel_task(self, task_id: str, reason: str = "Interrompido pelo operador via UI") -> bool:
+        task = self.kanban.get_task(task_id)
+        if not task:
+            return False
+        ws_path = task.get("workspace_path")
+        if ws_path:
+            pid_file = Path(ws_path) / ".haos" / "pid.txt"
+            if pid_file.is_file():
+                try:
+                    pid = int(pid_file.read_text(encoding="utf-8").strip())
+                    import signal
+                    os.kill(pid, signal.SIGTERM)
+                except Exception:
+                    pass
+        try:
+            self.kanban.record_task_failure(task_id, reason, outcome="user_canceled")
+        except Exception:
+            pass
+        return True
+
+    def requeue_task(self, task_id: str) -> bool:
+        conn = self.kanban._connect()
+        conn.execute("UPDATE tasks SET status = 'ready', claim_lock = NULL, started_at = NULL WHERE id = ?", (task_id,))
+        conn.commit()
+        return True
+
+    def get_unified_timeline(self, limit: int = 150, category: Optional[str] = None) -> List[Dict[str, Any]]:
+        timeline = []
+        raw_events = self.event_store.get_all(limit=limit)
+        for ev in raw_events:
+            p = ev.payload or {}
+            name = str(ev.name)
+            ts = float(ev.timestamp)
+            cat = "system"
+            icon = "⚡"
+            title = name
+
+            if name.startswith("haos.task.") or name.startswith("task."):
+                cat = "tasks"
+                icon = "📋"
+                if "spawned" in name or "started" in name:
+                    title = f"Missão iniciada: {p.get('task_id') or p.get('goal') or ''}"
+                    icon = "🚀"
+                elif "completed" in name:
+                    title = f"Missão concluída: {p.get('task_id') or ''}"
+                    icon = "✅"
+                elif "failed" in name:
+                    title = f"Falha na missão: {p.get('task_id') or p.get('error') or ''}"
+                    icon = "❌"
+            elif "tool" in name:
+                cat = "tools"
+                icon = "🔧"
+                title = f"Tool chamada: {p.get('tool') or p.get('name') or name}"
+            elif "intervention" in name:
+                cat = "interventions"
+                icon = "🛡️"
+                title = f"Intervenção de operador: {p.get('target_id')} -> {p.get('action')}"
+            elif "evolution" in name or "proposal" in name:
+                cat = "ouroboros"
+                icon = "🔄"
+                title = f"Evolução de código: {p.get('proposal_id') or name}"
+            elif "model" in name or "route" in name:
+                cat = "agent"
+                icon = "🧠"
+                title = f"Roteamento de IA: {p.get('model') or name}"
+
+            if category and category != "all" and cat != category:
+                continue
+
+            timeline.append({
+                "id": ev.event_id,
+                "name": name,
+                "category": cat,
+                "icon": icon,
+                "title": title,
+                "timestamp": ts,
+                "trace_id": ev.trace_id,
+                "correlation_id": ev.correlation_id,
+                "payload": p,
+            })
+
+        timeline.sort(key=lambda x: x["timestamp"], reverse=True)
+        return timeline[:limit]
+
 
 class HAOSStandaloneHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, state: Optional[HAOSStandaloneState] = None,
@@ -301,6 +418,27 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._fs_browse()
         elif self.command == "POST" and path == "/api/fs/mkdir":
             self._fs_mkdir()
+        elif self.command == "GET" and path == "/api/timeline":
+            cat = parse_qs(urlparse(self.path).query).get("category", [None])[0]
+            self._send_json(200, {"timeline": self.state.get_unified_timeline(category=cat)})
+        elif path.startswith("/api/tasks/"):
+            parts = path.strip("/").split("/")
+            if len(parts) == 3:
+                task_id = parts[2]
+                if self.command == "GET":
+                    details = self.state.get_task_details(task_id)
+                    if details:
+                        self._send_json(200, details)
+                    else:
+                        self._send_json(404, {"error": "task_not_found"})
+                elif self.command == "POST":
+                    self._task_action(task_id)
+            elif len(parts) == 4 and parts[3] == "stream" and self.command == "GET":
+                self._task_stream(parts[2])
+            elif len(parts) == 4 and parts[3] == "action" and self.command == "POST":
+                self._task_action(parts[2])
+            else:
+                self._send_json(404, {"error": "not_found", "path": path})
         elif path.startswith("/api/terminal/") and self._terminal_sid() is not None:
             sid = self._terminal_sid()
             if self.command == "GET" and path.endswith("/drain"):
@@ -402,6 +540,114 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         max_spawn = max(1, int(body.get("max_spawn") or 1))
         self.state.dispatch_in_background(max_spawn=max_spawn)
         self._send_json(200, {"accepted": True, "max_spawn": max_spawn})
+
+    def _task_action(self, task_id: str) -> None:
+        body = self._read_json_body()
+        action = str(body.get("action") or "").strip().lower()
+        if action in ("cancel", "stop", "kill"):
+            ok = self.state.cancel_task(task_id, reason=str(body.get("reason") or "Cancelado pelo operador via UI"))
+            self._send_json(200, {"success": ok, "action": action, "task_id": task_id})
+        elif action in ("retry", "requeue", "ready"):
+            ok = self.state.requeue_task(task_id)
+            self._send_json(200, {"success": ok, "action": action, "task_id": task_id})
+        elif action in ("dispatch", "run"):
+            self.state.dispatch_in_background(max_spawn=1)
+            self._send_json(200, {"success": True, "action": action, "task_id": task_id})
+        else:
+            self._send_json(400, {"error": "invalid_action", "supported": ["cancel", "requeue", "dispatch"]})
+
+    def _task_stream(self, task_id: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        task = self.state.kanban.get_task(task_id)
+        if not task:
+            msg = json.dumps({"error": "task_not_found", "task_id": task_id})
+            try:
+                self.wfile.write(f"event: error\ndata: {msg}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            except Exception:
+                pass
+            return
+
+        ws_path = task.get("workspace_path")
+        log_file = Path(ws_path) / ".haos" / "worker.log" if ws_path else None
+
+        init_pkt = json.dumps({
+            "task_id": task_id,
+            "status": task.get("status"),
+            "title": task.get("title"),
+            "goal": (task.get("spec") or {}).get("goal") or task.get("title"),
+            "elapsed_seconds": task.get("elapsed_seconds", 0),
+            "tokens": task.get("tokens", 0),
+            "cost": task.get("cost", 0.0),
+        })
+        try:
+            self.wfile.write(f"event: status\ndata: {init_pkt}\n\n".encode("utf-8"))
+            self.wfile.flush()
+        except Exception:
+            return
+
+        last_pos = 0
+        iterations = 0
+        while iterations < 600:
+            iterations += 1
+            if not log_file:
+                t_check = self.state.kanban.get_task(task_id)
+                if t_check and t_check.get("workspace_path"):
+                    ws_path = t_check.get("workspace_path")
+                    log_file = Path(ws_path) / ".haos" / "worker.log"
+
+            if log_file and log_file.is_file():
+                try:
+                    with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                        f.seek(last_pos)
+                        new_data = f.read()
+                        if new_data:
+                            last_pos = f.tell()
+                            chunk = json.dumps({"text": new_data})
+                            self.wfile.write(f"event: log\ndata: {chunk}\n\n".encode("utf-8"))
+                            self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+                except Exception:
+                    pass
+
+            cur_task = self.state.kanban.get_task(task_id)
+            if cur_task:
+                cur_status = str(cur_task.get("status", "")).lower()
+                status_pkt = json.dumps({
+                    "task_id": task_id,
+                    "status": cur_status,
+                    "elapsed_seconds": cur_task.get("elapsed_seconds", 0),
+                    "tokens": cur_task.get("tokens", 0),
+                    "cost": cur_task.get("cost", 0.0),
+                    "summary": (cur_task.get("result") or {}).get("summary", "") if hasattr(cur_task.get("result"), "get") else "",
+                })
+                try:
+                    self.wfile.write(f"event: status\ndata: {status_pkt}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+                except Exception:
+                    pass
+
+                if cur_status in ("done", "failed", "blocked", "completed"):
+                    try:
+                        self.wfile.write(b"event: done\ndata: {}\n\n")
+                        self.wfile.flush()
+                    except Exception:
+                        pass
+                    break
+
+            try:
+                time.sleep(1.0)
+            except Exception:
+                break
 
     def _intervene(self) -> None:
         body = self._read_json_body()

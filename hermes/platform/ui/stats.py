@@ -109,7 +109,7 @@ class DashboardStats:
     def available(self) -> bool:
         return self.kanban is not None
 
-    def task_board(self, *, recent_limit: int = 8) -> TaskBoardStats:
+    def task_board(self, *, recent_limit: int = 60) -> TaskBoardStats:
         if self.kanban is None:
             return TaskBoardStats()
         tasks = self.kanban.list_tasks()

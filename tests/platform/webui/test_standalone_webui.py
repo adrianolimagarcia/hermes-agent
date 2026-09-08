@@ -161,6 +161,24 @@ class TestStandaloneServer(unittest.TestCase):
         self.assertGreaterEqual(len(cards), 1)
         self.assertIn(str(cards[0].get("status")), ("done", "failed", "blocked", "running"))
 
+    def test_task_details_action_and_timeline(self):
+        created = self._post("/api/tasks", {"goal": "Testar timeline e acao de tarefas", "priority": 70})
+        tid = created["task_id"]
+        detail = json.loads(self._get(f"/api/tasks/{tid}"))
+        self.assertEqual(detail["id"], tid)
+        self.assertIn("tokens", detail)
+        self.assertIn("cost", detail)
+        self.assertIn("elapsed_seconds", detail)
+
+        # Ação de requeue
+        act_res = self._post(f"/api/tasks/{tid}/action", {"action": "requeue"})
+        self.assertTrue(act_res["success"])
+
+        # Timeline
+        tl = json.loads(self._get("/api/timeline"))
+        self.assertIn("timeline", tl)
+        self.assertIsInstance(tl["timeline"], list)
+
     def test_settings_endpoints(self):
         res = self._post("/api/settings", {"max_global_concurrency": 11})
         self.assertTrue(res["ok"])

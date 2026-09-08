@@ -190,6 +190,158 @@
   .tg-btn:hover { border-color: var(--accent); color: #fff; background: #222c3e; }
   .tg-btn.abort:hover { border-color: var(--err); color: var(--err); }
 
+  /* ==================================================================== */
+  /* KANBAN MULTI-LANE VISUALS (FASE 1)                                   */
+  /* ==================================================================== */
+  .kanban-lanes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .kanban-col {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: 480px;
+    max-height: calc(100vh - 230px);
+  }
+  .kanban-col-head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px 10px 0 0;
+  }
+  .kanban-col-head .col-count {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+  }
+  .kanban-col.ready .kanban-col-head { border-top: 3px solid #7aa2ff; }
+  .kanban-col.running .kanban-col-head { border-top: 3px solid #e3b341; }
+  .kanban-col.review .kanban-col-head { border-top: 3px solid #d2a8ff; }
+  .kanban-col.done .kanban-col-head { border-top: 3px solid #3fb950; }
+  .kanban-col.failed .kanban-col-head { border-top: 3px solid #f85149; }
+
+  .kanban-cards-list {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .k-card {
+    background: #131822;
+    border: 1px solid #232d3f;
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: transform 0.15s, border-color 0.15s;
+    cursor: default;
+  }
+  .k-card:hover { border-color: #3b4c6b; transform: translateY(-1px); }
+  .k-card.running { border-color: #e3b341; box-shadow: 0 0 10px rgba(227,179,65,0.18); }
+  .k-card-top { display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; }
+  .k-card-title { font-weight: 600; font-size: 0.84rem; color: #f0f6fc; line-height: 1.3; }
+  .k-card-goal { font-size: 0.74rem; color: var(--muted); line-height: 1.3; max-height: 2.6em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .k-card-metrics { display: flex; gap: 8px; font-size: 0.72rem; font-family: var(--mono); color: var(--accent); background: rgba(0,0,0,0.3); padding: 3px 6px; border-radius: 4px; }
+  .k-card-worker { font-size: 0.72rem; color: var(--muted); }
+  .k-card-actions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .k-card-actions button { font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; }
+
+  /* ==================================================================== */
+  /* CONSOLE LIVE STREAM & THOUGHT ENHANCEMENTS                           */
+  /* ==================================================================== */
+  .thought-card {
+    background: #101622;
+    border: 1px solid #1f2b3e;
+    border-left: 3px solid #7aa2ff;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-size: 0.82rem;
+  }
+  .thought-card summary {
+    cursor: pointer;
+    color: #7aa2ff;
+    font-weight: 600;
+    outline: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .thought-body {
+    margin-top: 6px;
+    color: #c9d1d9;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    max-height: 240px;
+    overflow-y: auto;
+    line-height: 1.4;
+  }
+  .tool-call-card {
+    background: #0f192b;
+    border: 1px solid #1b2d4f;
+    border-left: 3px solid #4fd1c5;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 4px 0;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+  }
+  .tool-call-head { color: #4fd1c5; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .log-stream-box {
+    background: #080c14;
+    border: 1px solid #1a2232;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: #8b949e;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin: 6px 0;
+  }
+
+  /* ==================================================================== */
+  /* UNIFIED TIMELINE VISUALS                                             */
+  /* ==================================================================== */
+  .timeline-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #131822;
+    border: 1px solid #232d3f;
+    border-radius: 8px;
+    align-items: flex-start;
+    transition: background 0.15s;
+  }
+  .timeline-item:hover { background: #18202d; }
+  .timeline-icon { font-size: 1.1rem; padding: 4px; border-radius: 50%; background: #1a2332; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .timeline-content { flex: 1; min-width: 0; }
+  .timeline-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .timeline-title { font-weight: 600; font-size: 0.84rem; color: #f0f6fc; }
+  .timeline-time { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); }
+  .timeline-payload { margin-top: 4px; font-size: 0.74rem; font-family: var(--mono); color: #8b949e; background: #0a0e17; padding: 4px 8px; border-radius: 4px; max-height: 90px; overflow-y: auto; word-break: break-all; }
+  .timeline-filter.active { background: #00F0FF; color: #0a0d13; font-weight: 700; border-color: #00F0FF; }
+
   ::-webkit-scrollbar { width: 9px; height: 9px; }
   ::-webkit-scrollbar-thumb { background: #263041; border-radius: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -239,7 +391,7 @@
   <button data-tab="ouroboros"><span class="dot"></span>Ouroboros</button>
   <button data-tab="agent"><span class="dot"></span>Config Agente</button>
   <button data-tab="system"><span class="dot"></span>Sistema</button>
-  <button data-tab="events"><span class="dot"></span>Eventos</button>
+  <button data-tab="events"><span class="dot"></span>Timeline</button>
   <button data-tab="config"><span class="dot"></span>Engine</button>
 </nav>
 <main>
@@ -274,14 +426,30 @@
 
   <!-- ============ CONSOLE ============ -->
   <section class="tab" id="tab-console">
+    <!-- Top Stream Control Bar -->
+    <div class="card" style="margin-bottom:8px;padding:8px 12px;background:#161b22;border:1px solid #30363d;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="consoleLiveDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8b949e;"></span>
+          <span style="font-weight:600;font-size:0.88rem;color:#f0f6fc;" id="consoleMissionTitle">Console de Missões Agênticas</span>
+          <span class="tg-badge idle" id="consoleMissionStatus">PRONTO</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="chip mono" id="consoleLiveMetrics" style="font-size:0.75rem;padding:3px 8px;background:rgba(0,240,255,0.08);color:#00F0FF;border-color:rgba(0,240,255,0.25);">⏱ 0s · 🪙 0 · 💵 $0.000</span>
+          <button class="act" style="font-size:0.75rem;padding:4px 8px;" onclick="switchConsoleToActiveTerminal()" id="btnConsoleTerminal" title="Abrir terminal interativo vinculado">↗ Terminal</button>
+          <button class="act" style="font-size:0.75rem;padding:4px 8px;background:rgba(248,81,73,0.15);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="cancelActiveConsoleMission()" id="btnConsoleCancel" title="Interromper execução ativa">⏹ Parar</button>
+          <button class="act" style="font-size:0.75rem;padding:4px 8px;" onclick="clearConsoleFeed()" title="Limpar histórico da tela">Limpar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Stream Container -->
     <div class="card" style="padding:0;overflow:hidden;">
       <div class="console">
         <div class="msgs" id="consoleMsgs">
           <div class="msg engine">
-            <div class="meta">HAOS · Task Engine — Console de Missões</div>
-            Cada mensagem abaixo vira um card no Kanban canônico (Task ≠ Run), é
-            despachado pela lane do engine e você acompanha o ciclo de vida real.
-            Escreva um objetivo para começar.
+            <div class="meta">HAOS · Cognitive Mission Console</div>
+            Despache missões diretamente na lane agêntica autônoma. O stream ao vivo exibirá o raciocínio profundo, chamadas de ferramentas e progresso em tempo real.
           </div>
         </div>
         <div class="composer">
@@ -295,29 +463,37 @@
 
   <!-- ============ TASKBOARD ============ -->
   <section class="tab" id="tab-taskboard">
-    <div class="grid">
-      <div class="card">
-        <h3><span class="n">#</span> Kanban · Task Engine</h3>
-        <div class="stat"><span>Total de tarefas</span><b id="tTotal">0</b></div>
-        <div id="tCols"></div>
-      </div>
-      <div class="card">
-        <h3><span class="n">+</span> Nova missão</h3>
-        <label class="f">Objetivo</label>
-        <input type="text" id="newTaskGoal" placeholder="Descreva o objetivo…" />
-        <label class="f">Prioridade (1–100)</label>
-        <input type="number" id="newTaskPrio" value="50" min="1" max="100" />
-        <div style="margin-top:12px;display:flex;gap:8px;">
-          <button class="act primary" onclick="createTask()">Criar card</button>
-          <button class="act" onclick="dispatchNow()">⏩ Despachar agora</button>
+    <!-- Taskboard Top Controls Bar -->
+    <div class="card" style="margin-bottom:12px;padding:10px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <h3 style="margin:0;font-size:0.95rem;color:#f0f6fc;display:flex;align-items:center;gap:6px;">
+            <span class="n">◫</span> Kanban Multi-Lane
+          </h3>
+          <span class="chip mono" style="font-size:0.78rem;">Total: <b id="tTotal" style="color:#00F0FF;">0</b></span>
+          <div id="tCols" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="act" style="font-size:0.78rem;padding:5px 12px;" onclick="toggleTaskboardView()" id="btnToggleTbView">▤ Alternar p/ Tabela</button>
+          <button class="act" style="font-size:0.78rem;padding:5px 12px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="dispatchNow()">⏩ Despachar Prontas</button>
+          <button class="act primary" style="font-size:0.78rem;padding:5px 12px;" onclick="openNewTaskModal()">＋ Nova Missão</button>
         </div>
       </div>
     </div>
-    <div class="card">
-      <h3><span class="n">▤</span> Tarefas recentes</h3>
+
+    <!-- Visual Kanban Lanes -->
+    <div id="kanbanLanesContainer" style="display:block;margin-bottom:16px;">
+      <div class="kanban-lanes" id="kanbanLanes">
+        <!-- Injected dynamically by renderTaskboard -->
+      </div>
+    </div>
+
+    <!-- Tabular View (Toggleable) -->
+    <div class="card" id="kanbanTableView" style="display:none;">
+      <h3><span class="n">▤</span> Tabela Detalhada de Tarefas</h3>
       <div style="overflow:auto;max-height:480px;">
         <table>
-          <thead><tr><th>ID</th><th>Objetivo</th><th>Status</th><th>Worker/Run</th><th>Resultado</th></tr></thead>
+          <thead><tr><th>ID</th><th>Objetivo</th><th>Status</th><th>Worker/Run</th><th>Métricas</th><th>Ações</th></tr></thead>
           <tbody id="tBody"></tbody>
         </table>
       </div>
@@ -436,11 +612,29 @@
     </div>
   </section>
 
-  <!-- ============ EVENTOS ============ -->
+  <!-- ============ TIMELINE UNIFICADA ============ -->
   <section class="tab" id="tab-events">
+    <div class="card" style="margin-bottom:12px;padding:10px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h3 style="margin:0;font-size:0.95rem;color:#f0f6fc;display:flex;align-items:center;gap:6px;">
+            <span class="n">≡</span> Timeline Unificada do Workspace
+          </h3>
+          <span style="font-size:0.75rem;color:var(--muted);">Trilha append-only ordenada em tempo real (tarefas, execuções de tools, intervenções e Ouroboros)</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;" id="timelineFilters">
+          <button class="act timeline-filter active" data-cat="all" onclick="filterTimeline('all')">Todos</button>
+          <button class="act timeline-filter" data-cat="tasks" onclick="filterTimeline('tasks')">📋 Missões</button>
+          <button class="act timeline-filter" data-cat="tools" onclick="filterTimeline('tools')">🔧 Tools</button>
+          <button class="act timeline-filter" data-cat="ouroboros" onclick="filterTimeline('ouroboros')">🔄 Ouroboros</button>
+          <button class="act timeline-filter" data-cat="interventions" onclick="filterTimeline('interventions')">🛡️ Intervenções</button>
+        </div>
+      </div>
+    </div>
     <div class="card">
-      <h3><span class="n">≡</span> EventStore — trilha append-only</h3>
-      <div id="evList" style="max-height:560px;overflow-y:auto;"><span class="empty">Sem eventos.</span></div>
+      <div id="evList" style="max-height:calc(100vh - 240px);min-height:480px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+        <span class="empty">Carregando timeline unificada…</span>
+      </div>
     </div>
   </section>
 
@@ -600,6 +794,7 @@ function initNavTabs() {
       if (b.dataset.tab === "scheduler") schedLoad();
       if (b.dataset.tab === "agent") agentCfgLoad();
       if (b.dataset.tab === "system") systemLoad();
+      if (b.dataset.tab === "events") loadUnifiedTimeline();
     });
   });
 }
@@ -648,14 +843,105 @@ function render(stateData) {
 }
 
 // ---- taskboard --------------------------------------------------------
+let currentTbView = "lanes"; // "lanes" | "table"
+
+function toggleTaskboardView() {
+  currentTbView = (currentTbView === "lanes") ? "table" : "lanes";
+  const btn = $("btnToggleTbView");
+  const lanesDiv = $("kanbanLanesContainer");
+  const tableDiv = $("kanbanTableView");
+  if (currentTbView === "lanes") {
+    if (btn) btn.textContent = "▤ Alternar p/ Tabela";
+    if (lanesDiv) lanesDiv.style.display = "block";
+    if (tableDiv) tableDiv.style.display = "none";
+  } else {
+    if (btn) btn.textContent = "◫ Alternar p/ Lanes";
+    if (lanesDiv) lanesDiv.style.display = "none";
+    if (tableDiv) tableDiv.style.display = "block";
+  }
+  if (state.last && state.last.taskboard) {
+    renderTaskboard(state.last.taskboard);
+  }
+}
+
 function renderTaskboard(tb) {
   if (!tb) return;
   $("tTotal").textContent = tb.total;
   const cols = tb.columns || [];
   $("tCols").innerHTML = cols.length
-    ? cols.map((c) => `<div class="stat"><span>${esc(c.status)}</span><b class="info">${c.count}</b></div>`).join("")
+    ? cols.map((c) => `<div class="stat" style="padding:2px 6px;border:none;"><span>${esc(c.status)}</span><b class="info">${c.count}</b></div>`).join("")
     : `<div class="stat"><span>Nenhuma coluna ativa</span><b class="muted">—</b></div>`;
-  const rows = (tb.recent || []).map((t) => {
+
+  const tasks = tb.recent || [];
+
+  // 1. Render Multi-Lane Kanban Visuals
+  const laneDefs = [
+    { key: "ready", label: "Prontas (Ready)", statusList: ["ready", "todo", "pending"] },
+    { key: "running", label: "Em Execução (Running)", statusList: ["running", "in_progress"] },
+    { key: "review", label: "Revisão (Review)", statusList: ["review", "testing"] },
+    { key: "done", label: "Concluídas (Done)", statusList: ["done", "completed"] },
+    { key: "failed", label: "Bloqueadas / Falha", statusList: ["failed", "blocked", "error"] },
+  ];
+
+  const lanesHtml = laneDefs.map((ld) => {
+    const laneTasks = tasks.filter((t) => {
+      const st = String(t.status || "").toLowerCase();
+      return ld.statusList.includes(st);
+    });
+
+    const cardsHtml = laneTasks.map((t) => {
+      const spec = t.spec || {};
+      const goal = spec.goal || spec.description || t.title || "";
+      const isRunning = String(t.status || "").toLowerCase() in { running: 1, in_progress: 1 };
+      const elapsed = t.elapsed_seconds ? `${t.elapsed_seconds}s` : "—";
+      const tokens = t.tokens ? Number(t.tokens).toLocaleString() : "0";
+      const cost = t.cost ? `$${Number(t.cost).toFixed(4)}` : "$0.00";
+      const worker = (t.run || {}).worker_id || t.worker || "haos-worker";
+
+      return `
+        <div class="k-card ${isRunning ? 'running' : ''}" id="kcard_${esc(t.id)}">
+          <div class="k-card-top">
+            <span class="mono" style="color:#00F0FF;font-weight:700;cursor:pointer;" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">${esc(t.id)}</span>
+            ${statusTag(t.status)}
+          </div>
+          <div class="k-card-title">${esc(t.title || goal || "")}</div>
+          <div class="k-card-goal">${esc(goal)}</div>
+          <div class="k-card-metrics">
+            <span>⏱ ${elapsed}</span>
+            <span>🪙 ${tokens}</span>
+            <span>💵 ${cost}</span>
+          </div>
+          <div class="k-card-worker">👤 ${esc(worker)} · Prio: ${t.priority || 50}</div>
+          <div class="k-card-actions">
+            <button class="act" onclick="attachConsoleToTask('${esc(t.id)}')">📡 Ver Stream</button>
+            <button class="act" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">▮ Terminal</button>
+            ${isRunning
+              ? `<button class="act danger" onclick="triggerTaskAction('${esc(t.id)}', 'cancel')">⏹ Parar</button>`
+              : `<button class="act" onclick="triggerTaskAction('${esc(t.id)}', 'requeue')">↺ Repetir</button>`
+            }
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="kanban-col ${ld.key}">
+        <div class="kanban-col-head">
+          <span>${ld.label}</span>
+          <span class="col-count">${laneTasks.length}</span>
+        </div>
+        <div class="kanban-cards-list">
+          ${cardsHtml || `<div class="empty" style="padding:30px 10px;font-size:0.75rem;">Sem cards nesta coluna</div>`}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  const lanesContainer = $("kanbanLanes");
+  if (lanesContainer) lanesContainer.innerHTML = lanesHtml;
+
+  // 2. Render Traditional Table View
+  const rows = tasks.map((t) => {
     const spec = t.spec || {};
     const run = t.run || {};
     const goal = spec.goal || spec.description || "";
@@ -663,15 +949,34 @@ function renderTaskboard(tb) {
     const summary = (typeof res.summary === "string" ? res.summary : "") ||
                     (typeof res.outcome === "string" ? "outcome=" + res.outcome : "") || "";
     const worker = run.worker_id || t.worker || "";
+    const metrics = `⏱ ${t.elapsed_seconds || 0}s | 🪙 ${t.tokens || 0}`;
     return `<tr>
       <td class="mono info"><a href="javascript:void(0)" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')" style="color:#00F0FF;text-decoration:none;font-weight:600;" title="Abrir terminal para este card">${esc(t.id || "")}</a></td>
       <td><a href="javascript:void(0)" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')" style="color:var(--text);text-decoration:none;" title="Abrir terminal">${esc(t.title || goal || "")}</a><div style="color:var(--muted);font-size:.76rem">${esc(goal)}</div></td>
       <td>${statusTag(t.status)}</td>
       <td class="mono" style="color:var(--muted)">${esc(worker)}</td>
-      <td style="font-size:.8rem;color:var(--muted)">${esc(summary).slice(0, 140)}</td>
+      <td class="mono" style="font-size:0.75rem;color:var(--accent);">${metrics}</td>
+      <td>
+        <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="attachConsoleToTask('${esc(t.id)}')">Stream</button>
+        <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">Term</button>
+      </td>
     </tr>`;
   }).join("");
-  $("tBody").innerHTML = rows || `<tr><td colspan="5" style="color:var(--muted)">Sem tarefas no Kanban.</td></tr>`;
+  $("tBody").innerHTML = rows || `<tr><td colspan="6" style="color:var(--muted)">Sem tarefas no Kanban.</td></tr>`;
+}
+
+async function triggerTaskAction(taskId, action) {
+  try {
+    const res = await api(`/api/tasks/${taskId}/action`, { action });
+    if (res.success) {
+      refresh();
+      if (action === "requeue") {
+        api("/api/dispatch", { max_spawn: 1 });
+      }
+    }
+  } catch (err) {
+    alert(`Erro ao executar ação '${action}': ${err.message}`);
+  }
 }
 
 // ---- team graph (phase 5) ---------------------------------------------
@@ -900,15 +1205,57 @@ function renderOuroboros(pending, history) {
     : `<span class="empty">Nenhuma decisão registrada.</span>`;
 }
 
-// ---- events -----------------------------------------------------------
-function renderEvents(events) {
+// ---- events & unified timeline ---------------------------------------
+let activeTimelineCategory = "all";
+
+function filterTimeline(category) {
+  activeTimelineCategory = category;
+  document.querySelectorAll(".timeline-filter").forEach((b) => {
+    b.classList.toggle("active", b.dataset.cat === category);
+  });
+  loadUnifiedTimeline();
+}
+
+async function loadUnifiedTimeline() {
   const list = $("evList");
-  if (!events || !events.length) { list.innerHTML = `<span class="empty">Sem eventos registrados.</span>`; return; }
-  list.innerHTML = events.slice().reverse().map((e) =>
-    `<div class="ev-row"><span class="t">${e.timestamp}</span>
-     <span class="n">${esc(e.name)}</span>
-     <span class="mono" style="color:var(--muted)">${esc(e.trace_id || "")}</span>
-     <span style="color:var(--muted)">${esc(e.payload || "")}</span></div>`).join("");
+  if (!list) return;
+  try {
+    const url = activeTimelineCategory === "all" ? "/api/timeline" : `/api/timeline?category=${activeTimelineCategory}`;
+    const res = await api(url);
+    const items = res.timeline || [];
+    if (!items.length) {
+      list.innerHTML = `<span class="empty">Nenhum evento registrado nesta categoria.</span>`;
+      return;
+    }
+    list.innerHTML = items.map((item) => {
+      const dt = new Date(item.timestamp * 1000);
+      const timeStr = dt.toLocaleTimeString();
+      const pldStr = typeof item.payload === "object" ? JSON.stringify(item.payload, null, 2) : String(item.payload || "");
+      return `
+        <div class="timeline-item">
+          <div class="timeline-icon">${item.icon || "⚡"}</div>
+          <div class="timeline-content">
+            <div class="timeline-header">
+              <span class="timeline-title">${esc(item.title || item.name)}</span>
+              <span class="timeline-time">${timeStr} · ${item.id ? esc(item.id.slice(0, 8)) : ""}</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--accent);margin-top:2px;" class="mono">${esc(item.name)}</div>
+            ${pldStr && pldStr !== "{}" ? `<div class="timeline-payload">${esc(pldStr)}</div>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    list.innerHTML = `<div class="errline">Erro ao carregar timeline: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderEvents(events) {
+  // Se a aba timeline estiver ativa, carrega via API unificada
+  const eventsTab = $("tab-events");
+  if (eventsTab && eventsTab.classList.contains("active")) {
+    loadUnifiedTimeline();
+  }
 }
 
 // ---- settings ---------------------------------------------------------
@@ -974,12 +1321,123 @@ async function renderAgentSummary() {
 }
 
 // ---- console ----------------------------------------------------------
+let activeConsoleTaskId = null;
+let activeConsoleEventSource = null;
+
+function clearConsoleFeed() {
+  $("consoleMsgs").innerHTML = `
+    <div class="msg engine">
+      <div class="meta">HAOS · Cognitive Mission Console</div>
+      Feed limpo. Digite uma missão para iniciar um novo fluxo agêntico autônomo.
+    </div>
+  `;
+}
+
 function pushMsg(kind, html) {
   const wrap = document.createElement("div");
   wrap.className = "msg " + kind;
   wrap.innerHTML = html;
   $("consoleMsgs").appendChild(wrap);
   $("consoleMsgs").scrollTop = $("consoleMsgs").scrollHeight;
+  return wrap;
+}
+
+function attachConsoleToTask(taskId) {
+  activeConsoleTaskId = taskId;
+  $("consoleMissionTitle").textContent = `Missão ativa: ${taskId}`;
+  $("consoleLiveDot").style.background = "#e3b341";
+  $("consoleMissionStatus").className = "tg-badge running";
+  $("consoleMissionStatus").textContent = "RUNNING";
+
+  if (activeConsoleEventSource) {
+    activeConsoleEventSource.close();
+    activeConsoleEventSource = null;
+  }
+
+  // Switch to console tab
+  document.querySelectorAll("#nav button").forEach((x) => x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+  const cBtn = document.querySelector('#nav button[data-tab="console"]');
+  if (cBtn) cBtn.classList.add("active");
+  const cSec = $("tab-console");
+  if (cSec) cSec.classList.add("active");
+  window.scrollTo(0, 0);
+
+  const streamCard = pushMsg("engine", `
+    <div class="meta">HAOS · Conectado ao Live Stream da Tarefa ${esc(taskId)}</div>
+    <div style="font-weight:600;margin-bottom:6px;">📡 Acompanhando saída e raciocínio em tempo real...</div>
+    <div class="log-stream-box" id="streamLog_${esc(taskId)}">Conectando aos logs do worker agêntico...</div>
+  `);
+
+  const logBox = $(`streamLog_${taskId}`);
+  const sse = new EventSource(`/api/tasks/${taskId}/stream`);
+  activeConsoleEventSource = sse;
+
+  sse.addEventListener("status", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.elapsed_seconds !== undefined || data.tokens !== undefined) {
+        $("consoleLiveMetrics").textContent = `⏱ ${data.elapsed_seconds || 0}s · 🪙 ${data.tokens || 0} · 💵 $${Number(data.cost || 0).toFixed(4)}`;
+      }
+      if (data.status) {
+        const st = String(data.status).toLowerCase();
+        $("consoleMissionStatus").textContent = st.toUpperCase();
+        if (st === "done" || st === "completed") {
+          $("consoleMissionStatus").className = "tg-badge completed";
+          $("consoleLiveDot").style.background = "#3fb950";
+        } else if (st === "failed" || st === "error" || st === "blocked") {
+          $("consoleMissionStatus").className = "tg-badge failed";
+          $("consoleLiveDot").style.background = "#f85149";
+        } else {
+          $("consoleMissionStatus").className = "tg-badge running";
+          $("consoleLiveDot").style.background = "#e3b341";
+        }
+      }
+    } catch (err) {}
+  });
+
+  sse.addEventListener("log", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.text && logBox) {
+        if (logBox.textContent.includes("Conectando aos logs")) logBox.textContent = "";
+        logBox.textContent += data.text;
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+    } catch (err) {}
+  });
+
+  sse.addEventListener("done", () => {
+    sse.close();
+    activeConsoleEventSource = null;
+    pushMsg("engine", `<div class="meta">HAOS · Stream Encerrado</div>✓ Execução da missão finalizada.`);
+    refresh();
+  });
+
+  sse.addEventListener("error", () => {
+    sse.close();
+    activeConsoleEventSource = null;
+  });
+}
+
+function switchConsoleToActiveTerminal() {
+  if (activeConsoleTaskId) {
+    openTaskTerminal(activeConsoleTaskId, "Console Task");
+  } else {
+    termLaunchHaosTab();
+    navigateToTerminalTab();
+  }
+}
+
+async function cancelActiveConsoleMission() {
+  if (!activeConsoleTaskId) {
+    alert("Nenhuma missão ativa no momento.");
+    return;
+  }
+  await triggerTaskAction(activeConsoleTaskId, "cancel");
+  $("consoleMissionStatus").className = "tg-badge failed";
+  $("consoleMissionStatus").textContent = "CANCELADO";
+  $("consoleLiveDot").style.background = "#f85149";
 }
 
 async function sendConsole() {
@@ -987,23 +1445,18 @@ async function sendConsole() {
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
-  pushMsg("user", `<div class="meta">Você</div>${esc(message)}`);
+  pushMsg("user", `<div class="meta">Operador</div>${esc(message)}`);
   try {
     const res = await api("/api/console", { message });
     pushMsg("engine",
       `<div class="meta">HAOS · Task Engine</div>
        Missão aceita no Kanban canônico: <b class="mono info">${esc(res.task_id)}</b>
-       (spec <span class="mono">${esc(res.spec_id)}</span>). Despachando na lane do engine…
-       <div class="ev">task_id=${esc(res.task_id)}</div>`);
+       (spec <span class="mono">${esc(res.spec_id)}</span>). Despachada para a lane!`);
     state.pendingTasks[res.task_id] = { last: "running", html: null, goal: message };
 
-    // Auto-open dedicated interactive terminal tab for this task
-    const shortTitle = message.slice(0, 18) + (message.length > 18 ? "…" : "");
-    termStartNewTab(
-      `haos chat -q "${message.replace(/"/g, '\\"')}"`,
-      `Task ${res.task_id} (${shortTitle})`
-    );
-    navigateToTerminalTab();
+    // Auto attach live stream
+    attachConsoleToTask(res.task_id);
+    refresh();
   } catch (e) {
     pushMsg("engine", `<div class="meta">HAOS · Task Engine</div><span class="errline">✗ ${esc(e.message)}</span>`);
   }

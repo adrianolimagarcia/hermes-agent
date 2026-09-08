@@ -503,6 +503,22 @@ class KanbanAdapter:
         if task is None:
             return None
         meta = self._meta_row(task_id)
+        run = self._load_run(task_id)
+        result = self._load_result(task_id)
+        evidence = (result.evidence if result and hasattr(result, "evidence") else {}) or {}
+        tokens = evidence.get("tokens") or (run.snapshot.get("tokens") if run and hasattr(run, "snapshot") and run.snapshot else 0) or 0
+        cost = evidence.get("cost") or (run.snapshot.get("cost") if run and hasattr(run, "snapshot") and run.snapshot else 0.0) or 0.0
+        created_at = getattr(task, "created_at", 0.0) or 0.0
+        started_at = getattr(task, "started_at", None) or (run.started_at if run else None) or created_at
+        completed_at = getattr(task, "completed_at", None) or (result.completed_at if result else None)
+        now = time.time()
+        if completed_at and completed_at > 0:
+            elapsed_seconds = max(0.0, completed_at - (started_at or created_at))
+        elif started_at and started_at > 0 and str(task.status).lower() in ("in_progress", "running"):
+            elapsed_seconds = max(0.0, now - started_at)
+        else:
+            elapsed_seconds = 0.0
+
         return {
             "id": task.id,
             "spec_id": (meta or {}).get("spec_id"),
@@ -513,14 +529,20 @@ class KanbanAdapter:
             "phase": (meta or {}).get("phase", "triage"),
             "posture": (meta or {}).get("posture"),
             "workspace_kind": task.workspace_kind,
+            "workspace_path": getattr(task, "workspace_path", None),
             "current_run_id": task.current_run_id,
             "claim_lock": getattr(task, "claim_lock", None),
             "consecutive_failures": getattr(task, "consecutive_failures", 0),
             "spec": json.loads((meta or {}).get("spec_json") or "{}"),
             "plan": self.load_execution_plan(task_id),
-            "run": self._load_run(task_id),
-            "result": self._load_result(task_id),
-            "created_at": task.created_at,
+            "run": run,
+            "result": result,
+            "created_at": created_at,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "elapsed_seconds": round(elapsed_seconds, 1),
+            "tokens": int(tokens),
+            "cost": float(cost),
         }
 
     def list_tasks(self, *, status: Optional[str] = None,
