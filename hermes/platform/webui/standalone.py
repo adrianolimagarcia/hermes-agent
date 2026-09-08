@@ -263,6 +263,9 @@ class HAOSStandaloneState:
         conn.commit()
         return True
 
+    def clear_completed_tasks(self, include_failed: bool = False) -> int:
+        return self.kanban.clear_completed_tasks(include_failed=include_failed)
+
     def get_unified_timeline(self, limit: int = 150, category: Optional[str] = None) -> List[Dict[str, Any]]:
         timeline = []
         raw_events = self.event_store.get_all(limit=limit)
@@ -388,6 +391,8 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._console()
         elif self.command == "POST" and path == "/api/tasks":
             self._create_task()
+        elif self.command == "POST" and path in ("/api/tasks/clear", "/api/tasks/clear-completed"):
+            self._clear_tasks()
         elif self.command == "POST" and path == "/api/dispatch":
             self._dispatch()
         elif self.command == "POST" and path == "/api/evolution/analyze":
@@ -544,6 +549,12 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             requires_tasks=body.get("requires_tasks"),
         )
         self._send_json(200, {"accepted": True, **created})
+
+    def _clear_tasks(self) -> None:
+        body = self._read_json_body()
+        include_failed = bool(body.get("include_failed", False))
+        count = self.state.clear_completed_tasks(include_failed=include_failed)
+        self._send_json(200, {"success": True, "cleared": count})
 
     def _dispatch(self) -> None:
         body = self._read_json_body()

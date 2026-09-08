@@ -568,6 +568,32 @@ class KanbanAdapter:
                      (phase, time.time(), task_id))
         conn.commit()
 
+    def clear_completed_tasks(self, include_failed: bool = False) -> int:
+        """Limpa tarefas concluídas, arquivadas ou com falhas do banco Kanban."""
+        conn = self._connect()
+        statuses = ["done", "completed", "archived", "cancelled"]
+        if include_failed:
+            statuses.extend(["failed", "error"])
+        placeholders = ",".join(f"'{s}'" for s in statuses)
+        cur = conn.execute(f"SELECT id FROM tasks WHERE LOWER(status) IN ({placeholders})")
+        tids = [r[0] for r in cur.fetchall()]
+        count = 0
+        for tid in tids:
+            try:
+                kb.delete_task(conn, tid)
+                count += 1
+            except Exception:
+                pass
+        try:
+            conn.execute("DELETE FROM haos_task_meta WHERE task_id NOT IN (SELECT id FROM tasks)")
+            conn.execute("DELETE FROM haos_task_runs WHERE task_id NOT IN (SELECT id FROM tasks)")
+            conn.execute("DELETE FROM haos_task_results WHERE task_id NOT IN (SELECT id FROM tasks)")
+            conn.execute("DELETE FROM haos_run_events WHERE task_id NOT IN (SELECT id FROM tasks)")
+            conn.commit()
+        except Exception:
+            pass
+        return count
+
     # ------------------------------------------------------------------ #
     # meta internals
     # ------------------------------------------------------------------ #

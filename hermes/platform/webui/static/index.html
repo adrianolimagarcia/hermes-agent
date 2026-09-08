@@ -497,6 +497,7 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="act" style="font-size:0.78rem;padding:5px 12px;" onclick="toggleTaskboardView()" id="btnToggleTbView">▤ Alternar p/ Tabela</button>
+          <button class="act" style="font-size:0.78rem;padding:5px 12px;background:rgba(248,81,73,0.15);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="clearCompletedTasks()" title="Limpar tarefas já concluídas ou canceladas do histórico">🗑️ Limpar Concluídas</button>
           <button class="act" style="font-size:0.78rem;padding:5px 12px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="dispatchNow()">⏩ Despachar Prontas</button>
           <button class="act primary" style="font-size:0.78rem;padding:5px 12px;" onclick="openNewTaskModal()">＋ Nova Missão</button>
         </div>
@@ -731,6 +732,43 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<!-- ============ MODAL: NOVA MISSÃO (TASKBOARD) ============ -->
+<div id="newTaskModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;width:580px;max-width:92vw;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.8);overflow:hidden;">
+    <div style="padding:14px 18px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;background:#0d1117;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="color:#00F0FF;font-size:1.15rem;">＋</span>
+        <h3 style="margin:0;font-size:1rem;color:var(--text);font-weight:600;">Nova Missão no Taskboard</h3>
+      </div>
+      <button class="act" style="padding:2px 8px;font-size:0.9rem;" onclick="closeNewTaskModal()">✕</button>
+    </div>
+    <div style="padding:16px 20px;">
+      <label class="f">Título / Identificador Curto (Opcional)</label>
+      <input type="text" id="newTaskTitle" placeholder="Ex: Otimizar rotas do engine" style="width:100%;margin-bottom:12px;font-size:0.85rem;padding:6px 10px;" />
+      
+      <label class="f">Objetivo / Instruções da Missão *</label>
+      <textarea id="newTaskGoal" rows="4" placeholder="Descreva detalhadamente o que o agente autônomo deve realizar..." style="width:100%;resize:vertical;margin-bottom:12px;font-size:0.85rem;padding:8px 10px;"></textarea>
+
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;">
+          <label class="f">Prioridade (1–100)</label>
+          <input type="number" id="newTaskPrio" value="50" min="1" max="100" style="width:100%;font-size:0.85rem;padding:6px 10px;" />
+        </div>
+        <div style="flex:1;min-width:180px;margin-top:18px;">
+          <label class="f" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="newTaskAutoDispatch" checked style="width:auto;" /> Despachar imediatamente
+          </label>
+        </div>
+      </div>
+      <div class="errline" id="newTaskMsg" style="margin-top:8px;"></div>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #30363d;display:flex;justify-content:flex-end;gap:10px;background:#0d1117;">
+      <button class="act" onclick="closeNewTaskModal()">Cancelar</button>
+      <button class="act primary" onclick="submitNewTask()" style="background:#00F0FF;color:#0a0d13;font-weight:700;">✓ Criar Card</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: HISTÓRICO DE SESSÕES ============ -->
 <div id="historyModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
   <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;width:740px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.8);overflow:hidden;">
@@ -1594,24 +1632,70 @@ function followPendingTasks(tb) {
   });
 }
 
-async function createTask() {
-  const goal = $("newTaskGoal").value.trim();
-  if (!goal) return;
-  try {
-    const res = await api("/api/tasks", { goal, priority: parseInt($("newTaskPrio").value, 10) || 50 });
+function openNewTaskModal() {
+  const modal = $("newTaskModal");
+  if (modal) {
+    modal.style.display = "flex";
     $("newTaskGoal").value = "";
-    pushMsg("user", `<div class="meta">Taskboard</div>Card criado: <span class="mono info">${esc(res.task_id)}</span> — ${esc(goal)}`);
-    state.pendingTasks[res.task_id] = { last: "running", html: null, goal };
+    $("newTaskTitle").value = "";
+    $("newTaskPrio").value = "50";
+    $("newTaskMsg").textContent = "";
+    setTimeout(() => $("newTaskGoal").focus(), 50);
+  }
+}
 
-    // Auto-open dedicated terminal tab for this taskboard card
-    const shortGoal = goal.slice(0, 18) + (goal.length > 18 ? "…" : "");
-    termStartNewTab(
-      `haos chat -q "${goal.replace(/"/g, '\\"')}"`,
-      `Card ${res.task_id} (${shortGoal})`
-    );
-    navigateToTerminalTab();
+function closeNewTaskModal() {
+  const modal = $("newTaskModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function submitNewTask() {
+  const goal = $("newTaskGoal").value.trim();
+  const title = $("newTaskTitle").value.trim();
+  const priority = parseInt($("newTaskPrio").value, 10) || 50;
+  const autoDispatch = $("newTaskAutoDispatch").checked;
+  const msgEl = $("newTaskMsg");
+
+  if (!goal) {
+    if (msgEl) {
+      msgEl.textContent = "Por favor, preencha o objetivo da missão.";
+      msgEl.style.color = "var(--err)";
+    }
+    return;
+  }
+
+  try {
+    const res = await api("/api/tasks", { goal, title: title || null, priority });
+    closeNewTaskModal();
+    if (autoDispatch) {
+      api("/api/dispatch", { max_spawn: 1 });
+    }
     refresh();
-  } catch (e) { alert("✗ " + e.message); }
+    // Auto attach live console stream
+    if (res.task_id) {
+      attachConsoleToTask(res.task_id);
+    }
+  } catch (err) {
+    if (msgEl) {
+      msgEl.textContent = "Erro: " + err.message;
+      msgEl.style.color = "var(--err)";
+    } else {
+      alert("Erro ao criar missão: " + err.message);
+    }
+  }
+}
+
+const createTask = submitNewTask;
+
+async function clearCompletedTasks() {
+  const confirmed = confirm("Deseja limpar as missões finalizadas (concluídas/canceladas) do histórico do Taskboard?");
+  if (!confirmed) return;
+  try {
+    const res = await api("/api/tasks/clear", { include_failed: false });
+    refresh();
+  } catch (err) {
+    alert("Erro ao limpar missões: " + err.message);
+  }
 }
 
 async function dispatchNow() {
