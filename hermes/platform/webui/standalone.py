@@ -266,6 +266,12 @@ class HAOSStandaloneState:
     def clear_completed_tasks(self, include_failed: bool = False) -> int:
         return self.kanban.clear_completed_tasks(include_failed=include_failed)
 
+    def delete_task(self, task_id: str) -> bool:
+        return self.kanban.delete_task(task_id)
+
+    def reset_all_tasks(self) -> int:
+        return self.kanban.reset_all_tasks()
+
     def get_unified_timeline(self, limit: int = 150, category: Optional[str] = None) -> List[Dict[str, Any]]:
         timeline = []
         raw_events = self.event_store.get_all(limit=limit)
@@ -552,9 +558,13 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
     def _clear_tasks(self) -> None:
         body = self._read_json_body()
-        include_failed = bool(body.get("include_failed", False))
-        count = self.state.clear_completed_tasks(include_failed=include_failed)
-        self._send_json(200, {"success": True, "cleared": count})
+        reset_all = bool(body.get("all", False) or body.get("reset", False))
+        if reset_all:
+            count = self.state.reset_all_tasks()
+        else:
+            include_failed = bool(body.get("include_failed", False))
+            count = self.state.clear_completed_tasks(include_failed=include_failed)
+        self._send_json(200, {"success": True, "cleared": count, "reset_all": reset_all})
 
     def _dispatch(self) -> None:
         body = self._read_json_body()
@@ -571,11 +581,14 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         elif action in ("retry", "requeue", "ready"):
             ok = self.state.requeue_task(task_id)
             self._send_json(200, {"success": ok, "action": action, "task_id": task_id})
+        elif action in ("delete", "remove", "clear"):
+            ok = self.state.delete_task(task_id)
+            self._send_json(200, {"success": ok, "action": action, "task_id": task_id})
         elif action in ("dispatch", "run"):
             self.state.dispatch_in_background(max_spawn=1)
             self._send_json(200, {"success": True, "action": action, "task_id": task_id})
         else:
-            self._send_json(400, {"error": "invalid_action", "supported": ["cancel", "requeue", "dispatch"]})
+            self._send_json(400, {"error": "invalid_action", "supported": ["cancel", "requeue", "dispatch", "delete"]})
 
     def _task_stream(self, task_id: str) -> None:
         self.send_response(200)

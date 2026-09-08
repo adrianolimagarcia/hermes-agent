@@ -587,8 +587,48 @@ class KanbanAdapter:
         try:
             conn.execute("DELETE FROM haos_task_meta WHERE task_id NOT IN (SELECT id FROM tasks)")
             conn.execute("DELETE FROM haos_task_runs WHERE task_id NOT IN (SELECT id FROM tasks)")
-            conn.execute("DELETE FROM haos_task_results WHERE task_id NOT IN (SELECT id FROM tasks)")
+            conn.execute("DELETE FROM haos_task_artifacts WHERE task_id NOT IN (SELECT id FROM tasks)")
             conn.execute("DELETE FROM haos_run_events WHERE task_id NOT IN (SELECT id FROM tasks)")
+            conn.commit()
+        except Exception:
+            pass
+        return count
+
+    def delete_task(self, task_id_or_spec: str) -> bool:
+        """Exclui um card específico do Kanban e seus metadados associados."""
+        try:
+            task_id = self._resolve_task_id(task_id_or_spec) or task_id_or_spec
+            conn = self._connect()
+            try:
+                kb.delete_task(conn, task_id)
+            except Exception:
+                pass
+            conn.execute("DELETE FROM haos_task_meta WHERE task_id = ?", (task_id,))
+            conn.execute("DELETE FROM haos_task_runs WHERE task_id = ?", (task_id,))
+            conn.execute("DELETE FROM haos_task_artifacts WHERE task_id = ?", (task_id,))
+            conn.execute("DELETE FROM haos_run_events WHERE task_id = ?", (task_id,))
+            conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def reset_all_tasks(self) -> int:
+        """Limpa absolutamente todas as tarefas do Kanban (reset completo)."""
+        conn = self._connect()
+        cur = conn.execute("SELECT id FROM tasks")
+        tids = [r[0] for r in cur.fetchall()]
+        count = 0
+        for tid in tids:
+            try:
+                kb.delete_task(conn, tid)
+                count += 1
+            except Exception:
+                pass
+        try:
+            conn.execute("DELETE FROM haos_task_meta")
+            conn.execute("DELETE FROM haos_task_runs")
+            conn.execute("DELETE FROM haos_task_artifacts")
+            conn.execute("DELETE FROM haos_run_events")
             conn.commit()
         except Exception:
             pass

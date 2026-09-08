@@ -495,10 +495,11 @@
           <span class="chip mono" style="font-size:0.78rem;">Total: <b id="tTotal" style="color:#00F0FF;">0</b></span>
           <div id="tCols" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button class="act" style="font-size:0.78rem;padding:5px 12px;" onclick="toggleTaskboardView()" id="btnToggleTbView">▤ Alternar p/ Tabela</button>
-          <button class="act" style="font-size:0.78rem;padding:5px 12px;background:rgba(248,81,73,0.15);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="clearCompletedTasks()" title="Limpar tarefas já concluídas ou canceladas do histórico">🗑️ Limpar Concluídas</button>
-          <button class="act" style="font-size:0.78rem;padding:5px 12px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="dispatchNow()">⏩ Despachar Prontas</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="act" style="font-size:0.78rem;padding:5px 10px;" onclick="toggleTaskboardView()" id="btnToggleTbView">▤ Tabela</button>
+          <button class="act" style="font-size:0.78rem;padding:5px 10px;background:rgba(248,81,73,0.12);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="clearCompletedTasks()" title="Limpar tarefas já concluídas ou canceladas do histórico">🗑️ Limpar Concluídas</button>
+          <button class="act danger" style="font-size:0.78rem;padding:5px 10px;background:#da3633;color:#fff;font-weight:600;" onclick="resetAllKanban()" title="Limpar todas as tarefas do Kanban completamente">⚠️ Resetar Kanban</button>
+          <button class="act" style="font-size:0.78rem;padding:5px 10px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="dispatchNow()">⏩ Despachar</button>
           <button class="act primary" style="font-size:0.78rem;padding:5px 12px;" onclick="openNewTaskModal()">＋ Nova Missão</button>
         </div>
       </div>
@@ -999,12 +1000,13 @@ function renderTaskboard(tb) {
           </div>
           <div class="k-card-worker">👤 ${esc(worker)} · Prio: ${t.priority || 50}</div>
           <div class="k-card-actions">
-            <button class="act" onclick="attachConsoleToTask('${esc(t.id)}')">📡 Ver Stream</button>
-            <button class="act" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">▮ Terminal</button>
+            <button class="act" onclick="attachConsoleToTask('${esc(t.id)}')">📡 Stream</button>
+            <button class="act" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">▮ Term</button>
             ${isRunning
               ? `<button class="act danger" onclick="triggerTaskAction('${esc(t.id)}', 'cancel')">⏹ Parar</button>`
               : `<button class="act" onclick="triggerTaskAction('${esc(t.id)}', 'requeue')">↺ Repetir</button>`
             }
+            <button class="act danger" style="padding:2px 7px;" onclick="deleteTaskCard('${esc(t.id)}')" title="Excluir este card do Kanban">🗑️</button>
           </div>
         </div>
       `;
@@ -1045,6 +1047,7 @@ function renderTaskboard(tb) {
       <td>
         <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="attachConsoleToTask('${esc(t.id)}')">Stream</button>
         <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">Term</button>
+        <button class="act danger" style="font-size:0.7rem;padding:2px 6px;" onclick="deleteTaskCard('${esc(t.id)}')">🗑️</button>
       </td>
     </tr>`;
   }).join("");
@@ -1062,6 +1065,23 @@ async function triggerTaskAction(taskId, action) {
     }
   } catch (err) {
     alert(`Erro ao executar ação '${action}': ${err.message}`);
+  }
+}
+
+async function deleteTaskCard(taskId) {
+  const confirmed = confirm(`Deseja excluir o card ${taskId} do Kanban?`);
+  if (!confirmed) return;
+  await triggerTaskAction(taskId, 'delete');
+}
+
+async function resetAllKanban() {
+  const confirmed = confirm("ATENÇÃO: Deseja realmente RESETAR e LIMPAR TUDO do Kanban? Todas as tarefas em todas as colunas serão apagadas.");
+  if (!confirmed) return;
+  try {
+    const res = await api("/api/tasks/clear", { reset: true, all: true });
+    refresh();
+  } catch (err) {
+    alert("Erro ao resetar Kanban: " + err.message);
   }
 }
 
