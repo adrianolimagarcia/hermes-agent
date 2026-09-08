@@ -370,6 +370,8 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if self.command == "GET" and path in ("/", "/index.html"):
             self._serve_index()
+        elif self.command == "GET" and path in ("/health", "/api/health"):
+            self._send_json(200, {"status": "healthy", "service": "haos-controlplane"})
         elif self.command == "GET" and path == "/api/state":
             self._send_json(200, self.state.state_payload())
         elif self.command == "GET" and path in ("/v1/models", "/api/v1/models"):
