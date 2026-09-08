@@ -417,7 +417,8 @@ class ControlPlaneService:
                 task_id = p.get("task_id")
                 for w in workers_dict.values():
                     if w.get("task") == task_id or w.get("id") == task_id or task_id in str(w.get("id")):
-                        w["status"] = "completed"
+                        w["status"] = "idle"
+                        w["task"] = f"Livre (concluído: {task_id})"
 
         # 2. Reconcile with Kanban tasks as primary source of truth for active worker states
         kb_by_assignee: Dict[str, List[Dict[str, Any]]] = {}
@@ -452,9 +453,9 @@ class ControlPlaneService:
                 failed_t = next(t for t in tasks_list if str(t.get("status", "")).lower() in ("failed", "error"))
                 cur_task = failed_t.get("title") or failed_t.get("body") or failed_t.get("id")
             elif all_done:
-                st = "completed"
+                st = "idle"
                 last_t = tasks_list[-1]
-                cur_task = last_t.get("title") or last_t.get("body") or last_t.get("id")
+                cur_task = f"Livre (última: {last_t.get('title') or last_t.get('body') or last_t.get('id')})"
             elif has_ready:
                 st = "idle"
                 ready_t = next(t for t in tasks_list if str(t.get("status", "")).lower() in ("ready", "pending"))
@@ -490,10 +491,10 @@ class ControlPlaneService:
                 coder_task = "" if is_rev_task else (active_t.get("title") or active_t.get("id"))
                 rev_task = (active_t.get("title") or active_t.get("id")) if is_rev_task else "Aguardando conclusão do código"
             elif mission_status == NodeStatus.COMPLETED:
-                coder_st = "completed"
-                rev_st = "completed"
-                coder_task = "Tarefas concluídas"
-                rev_task = "Verificação concluída"
+                coder_st = "idle"
+                rev_st = "idle"
+                coder_task = "Livre (tarefas concluídas)"
+                rev_task = "Livre (verificação concluída)"
             elif mission_status == NodeStatus.FAILED:
                 coder_st = "failed"
                 rev_st = "idle"
