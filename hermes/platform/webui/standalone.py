@@ -392,6 +392,10 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._evolution_analyze()
         elif self.command == "POST" and path == "/api/evolution/decide":
             self._evolution_decide()
+        elif self.command == "POST" and path == "/api/evolution/blast-radius":
+            self._evolution_blast_radius()
+        elif self.command == "POST" and path == "/api/evolution/automerge":
+            self._evolution_automerge()
         elif self.command == "GET" and path == "/api/settings":
             self._send_json(200, self.state.settings)
         elif self.command == "POST" and path == "/api/settings":
@@ -414,6 +418,10 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._workspaces_list()
         elif self.command == "POST" and path == "/api/workspaces":
             self._workspaces_add()
+        elif self.command == "GET" and path == "/api/workspaces/context":
+            self._workspaces_context()
+        elif self.command == "POST" and path == "/api/workspaces/worktrees":
+            self._workspaces_create_worktree()
         elif self.command == "GET" and path == "/api/fs/browse":
             self._fs_browse()
         elif self.command == "POST" and path == "/api/fs/mkdir":
@@ -688,6 +696,42 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send_json(409, {"error": str(exc)})
 
+    def _evolution_blast_radius(self) -> None:
+        body = self._read_json_body()
+        files = body.get("files") or []
+        symbols = body.get("symbols") or []
+        from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph, ImpactAnalyzer
+        graph = CodeSymbolGraph()
+        analyzer = ImpactAnalyzer(graph)
+        try:
+            blast = analyzer.calculate_blast_radius(
+                modified_symbols=symbols,
+                modified_files=files,
+            )
+            self._send_json(200, {
+                "impacted_files": list(blast.affected_files),
+                "impacted_callers": list(blast.affected_callers),
+                "impacted_tests": list(blast.affected_test_suites),
+                "risk_score": round(min(1.0, (len(blast.affected_files) * 0.15) + (len(blast.affected_callers) * 0.05)), 2),
+                "severity": blast.severity,
+            })
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
+
+    def _evolution_automerge(self) -> None:
+        body = self._read_json_body()
+        task_id = str(body.get("task_id") or "").strip()
+        if not task_id:
+            self._send_json(400, {"error": "task_id_required"})
+            return
+        from hermes.platform.workspaces.automerge import AutoMergeGate
+        gate = AutoMergeGate()
+        try:
+            res = gate.evaluate_and_merge(task_id=task_id)
+            self._send_json(200, res)
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
+
     def _save_settings(self) -> None:
         body = self._read_json_body()
         saved = engine_settings.save_settings(self.state.data_dir, body)
@@ -941,6 +985,58 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         ws_file.parent.mkdir(parents=True, exist_ok=True)
         ws_file.write_text(json.dumps(current, indent=2, ensure_ascii=False), encoding="utf-8")
         self._send_json(200, ws_item)
+
+    def _workspaces_context(self) -> None:
+        query_str = urlparse(self.path).query
+        params = parse_qs(query_str)
+        ws_path = params.get("path", [None])[0]
+        if not ws_path:
+            p = Path.cwd()
+        else:
+            p = Path(ws_path).expanduser().resolve()
+
+        haos_dir = p / ".haos"
+        memories_dir = haos_dir / "memories"
+        vault_dir = p / "vault"
+        graphrag_dir = haos_dir / "graphrag"
+
+        memories = []
+        if memories_dir.is_dir():
+            for f in memories_dir.glob("*.md"):
+                memories.append(f.name)
+
+        adrs = []
+        if vault_dir.is_dir():
+            for f in vault_dir.glob("*.md"):
+                adrs.append(f.name)
+
+        is_git = (p / ".git").exists()
+
+        self._send_json(200, {
+            "workspace_path": str(p),
+            "is_git": is_git,
+            "has_haos_dir": haos_dir.is_dir(),
+            "memories": memories,
+            "adrs": adrs,
+            "has_graphrag": graphrag_dir.is_dir(),
+        })
+
+    def _workspaces_create_worktree(self) -> None:
+        body = self._read_json_body()
+        task_id = str(body.get("task_id") or f"t_{uuid.uuid4().hex[:6]}")
+        repo_root = body.get("repo_root") or os.getcwd()
+        from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+        mgr = GitWorktreeManager(repo_root=Path(repo_root))
+        try:
+            wt_path = mgr.create_worktree(task_id=task_id)
+            self._send_json(200, {
+                "success": True,
+                "task_id": task_id,
+                "worktree_path": str(wt_path),
+                "branch": f"haos/task-{task_id}",
+            })
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
 
     def _fs_browse(self) -> None:
         query_str = urlparse(self.path).query

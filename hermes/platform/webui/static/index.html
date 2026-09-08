@@ -185,6 +185,28 @@
     z-index: 2;
     box-shadow: 0 2px 10px rgba(0,0,0,0.5);
   }
+  /* Animated Pulse for Active Nodes */
+  @keyframes pulseNodeRunning {
+    0% { box-shadow: 0 0 0 0 rgba(227, 179, 65, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(227, 179, 65, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(227, 179, 65, 0); }
+  }
+  @keyframes pulseNodeCompleted {
+    0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.4); }
+    70% { box-shadow: 0 0 0 8px rgba(63, 185, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+  }
+  .tg-node.status-running {
+    animation: pulseNodeRunning 2s infinite;
+    border-color: var(--warn) !important;
+  }
+  .tg-node.status-completed {
+    border-color: var(--ok) !important;
+  }
+  .tg-node.status-failed, .tg-node.status-blocked {
+    border-color: var(--err) !important;
+  }
+
   .tg-actions { display: flex; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); }
   .tg-btn { flex: 1; padding: 5px 8px; font-size: 0.72rem; border-radius: 6px; cursor: pointer; background: #1a2230; border: 1px solid var(--border); color: var(--text); font-weight: 500; }
   .tg-btn:hover { border-color: var(--accent); color: #fff; background: #222c3e; }
@@ -553,9 +575,35 @@
   <!-- ============ OUROBOROS ============ -->
   <section class="tab" id="tab-ouroboros">
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
-      <h3 style="margin:0;flex:1;">Ouroboros — Evolution Engine (Shadow Mode)</h3>
+      <h3 style="margin:0;flex:1;">Ouroboros — Self-Evolution Engine & Blast Radius</h3>
       <button class="act" id="evAnalyzeBtn" onclick="analyzeEvo()">🔍 Analisar falhas → propostas</button>
     </div>
+
+    <!-- Ouroboros Live Blast Radius & Automerge Verification Tool -->
+    <div class="card" style="margin-bottom:14px;background:#161b22;border:1px solid #30363d;">
+      <h3><span class="n">🎯</span> Blast Radius Analyzer & Automerge Gate</h3>
+      <div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;">
+        Avalie o raio de impacto de alterações em arquivos/símbolos ou teste a elegibilidade de automerge para branches concluídas.
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">
+        <div>
+          <label class="f">Arquivos modificados (separados por vírgula)</label>
+          <input type="text" id="blastFilesInput" placeholder="ex: hermes/platform/webui/standalone.py, hermes/platform/tasks/kanban_adapter.py" />
+          <div style="margin-top:8px;">
+            <button class="act primary" onclick="runBlastRadiusAnalysis()">Calcular Blast Radius</button>
+          </div>
+        </div>
+        <div>
+          <label class="f">Testar Automerge Gate (Task ID)</label>
+          <input type="text" id="automergeTaskIdInput" placeholder="ex: t_28bce129" />
+          <div style="margin-top:8px;">
+            <button class="act" onclick="runAutomergeCheck()">Verificar Gate de Merge</button>
+          </div>
+        </div>
+      </div>
+      <div id="blastResultBox" style="margin-top:12px;display:none;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;"></div>
+    </div>
+
     <div class="card" style="margin-bottom:14px;">
       <h3><span class="n">◔</span> Propostas pendentes (human-in-the-loop)</h3>
       <div id="evPending"><span class="empty">Nenhuma proposta pendente.</span></div>
@@ -1013,7 +1061,7 @@ function renderTeamGraph(tg, ov) {
 
   let html = `
     <!-- LEVEL 1: TOWN MAYOR -->
-    <div class="tg-node mayor">
+    <div class="tg-node mayor status-${esc(mayorStatus)}">
       <div class="tg-node-header">
         <div class="tg-node-title">👑 Town Mayor <span style="font-size:0.75rem;color:var(--muted);">(Executive Lead)</span></div>
         <span class="tg-badge ${esc(mayorStatus)}">${esc(mayorStatus)}</span>
@@ -1025,6 +1073,7 @@ function renderTeamGraph(tg, ov) {
         <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(mayor.provider_id || 'a6api')}:${esc(mayor.model_id || 'deepseek-v4-flash')}</span></div>
       </div>
       <div class="tg-actions">
+        <button class="tg-btn" onclick="directNodeTerminal('${esc(mayor.node_id)}', 'Town Mayor')">▮ Terminal</button>
         <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','steer')">🎯 Steer</button>
         <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','pause')">⏸ Pause</button>
         <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','resume')">▶ Resume</button>
@@ -1039,7 +1088,7 @@ function renderTeamGraph(tg, ov) {
 
   if (subOrch) {
     html += `
-    <div class="tg-node suborch">
+    <div class="tg-node suborch status-${esc(subOrchStatus)}">
       <div class="tg-node-header">
         <div class="tg-node-title">🧠 Domain Sub-Orchestrator</div>
         <span class="tg-badge ${esc(subOrchStatus)}">${esc(subOrchStatus)}</span>
@@ -1051,6 +1100,7 @@ function renderTeamGraph(tg, ov) {
         <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(subOrch.provider_id || 'a6api')}:${esc(subOrch.model_id || 'deepseek-v4-flash')}</span></div>
       </div>
       <div class="tg-actions">
+        <button class="tg-btn" onclick="directNodeTerminal('${esc(subOrch.node_id)}', 'Sub-Orchestrator')">▮ Terminal</button>
         <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','steer')">🎯 Steer</button>
         <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','pause')">⏸ Pause</button>
         <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','resume')">▶ Resume</button>
@@ -1094,7 +1144,7 @@ function renderTeamGraph(tg, ov) {
       }
 
       html += `
-      <div class="tg-node ${postureClass}">
+      <div class="tg-node ${postureClass} status-${esc(statusClass)}">
         <div class="tg-node-header">
           <div class="tg-node-title">${icon} ${esc(w.label || w.node_id)}</div>
           <span class="tg-badge ${esc(statusClass)}">${esc(statusText)}</span>
@@ -1107,6 +1157,7 @@ function renderTeamGraph(tg, ov) {
           <div class="tg-node-row"><span>Tokens / Custo:</span><span class="val">${w.tokens_consumed || w.tokens || 0} tkn · $${Number(w.cost_usd || w.cost || 0).toFixed(5)}</span></div>
         </div>
         <div class="tg-actions">
+          <button class="tg-btn" onclick="directNodeTerminal('${esc(w.node_id || w.id)}', '${esc(w.label || w.node_id)}')">▮ Terminal</button>
           <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','steer')">🎯 Steer</button>
           <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','pause')">⏸ Pause</button>
           <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','resume')">▶ Resume</button>
@@ -1121,7 +1172,16 @@ function renderTeamGraph(tg, ov) {
   canvas.innerHTML = html;
 }
 
-// ---- operator intervention -------------------------------------------
+// ---- operator intervention & direct terminal -------------------------
+function directNodeTerminal(nodeId, label) {
+  const shortLabel = label || nodeId;
+  termStartNewTab(
+    `haos chat -q "Foco operacional no agente: ${nodeId}"`,
+    `Agent (${shortLabel.slice(0, 14)})`
+  );
+  navigateToTerminalTab();
+}
+
 async function intervene(targetId, action) {
   const reason = prompt(`Ação: ${action.toUpperCase()} para o agente ${targetId}.\nInforme a razão / instrução:`, "Instrução do operador via UI");
   if (!reason) return;
@@ -1203,6 +1263,55 @@ function renderOuroboros(pending, history) {
           <b class="${color}">${esc(String(v || pld.approver || "")).slice(0, 90)}</b></div>`;
       }).join("")
     : `<span class="empty">Nenhuma decisão registrada.</span>`;
+}
+
+async function runBlastRadiusAnalysis() {
+  const filesInput = $("blastFilesInput");
+  const raw = (filesInput.value || "").trim();
+  const box = $("blastResultBox");
+  box.style.display = "block";
+  box.innerHTML = `<span class="muted">Calculando grafo de símbolos e dependências...</span>`;
+  const files = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  try {
+    const res = await api("/api/evolution/blast-radius", { files: files });
+    const tests = (res.impacted_tests || []).map((t) => `<li>${esc(t)}</li>`).join("");
+    const callers = (res.impacted_callers || []).slice(0, 8).map((c) => `<li>${esc(c)}</li>`).join("");
+    box.innerHTML = `
+      <div style="font-weight:600;color:var(--ok);margin-bottom:6px;">✓ Análise de Blast Radius Concluída</div>
+      <div class="stat"><span>Pontuação de Risco Estimada:</span><b style="color:${res.risk_score > 0.5 ? 'var(--warn)' : 'var(--ok)'};">${res.risk_score}</b></div>
+      <div class="stat"><span>Arquivos Impactados:</span><b>${res.impacted_files.length}</b></div>
+      <div class="stat"><span>Chamadores Transitivos:</span><b>${res.impacted_callers.length}</b></div>
+      <div class="stat"><span>Suítes de Teste Recomendadas:</span><b>${res.impacted_tests.length}</b></div>
+      ${tests ? `<div style="margin-top:6px;font-size:0.75rem;color:var(--accent);"><b>Testes Críticos:</b><ul style="margin:2px 0 0 16px;">${tests}</ul></div>` : ''}
+    `;
+  } catch (err) {
+    box.innerHTML = `<div class="errline">Erro ao calcular Blast Radius: ${esc(err.message)}</div>`;
+  }
+}
+
+async function runAutomergeCheck() {
+  const taskInput = $("automergeTaskIdInput");
+  const taskId = (taskInput.value || "").trim();
+  const box = $("blastResultBox");
+  if (!taskId) {
+    alert("Informe o Task ID para verificar elegibilidade de automerge.");
+    return;
+  }
+  box.style.display = "block";
+  box.innerHTML = `<span class="muted">Executando contrato de automerge e testes de regressão...</span>`;
+  try {
+    const res = await api("/api/evolution/automerge", { task_id: taskId });
+    box.innerHTML = `
+      <div style="font-weight:600;color:${res.merged ? 'var(--ok)' : 'var(--warn)'};margin-bottom:6px;">
+        ${res.merged ? '✓ Automerge Aprovado & Aplicado' : '⚠ Automerge Não Aplicado'}
+      </div>
+      <div class="stat"><span>Status:</span><b>${esc(res.reason || res.status || 'avaliado')}</b></div>
+      <div class="stat"><span>Task ID:</span><b class="mono">${esc(taskId)}</b></div>
+      ${res.diff_stat ? `<pre style="font-size:0.72rem;background:#05070a;padding:6px;border-radius:4px;overflow-x:auto;">${esc(res.diff_stat)}</pre>` : ''}
+    `;
+  } catch (err) {
+    box.innerHTML = `<div class="errline">Erro no Automerge: ${esc(err.message)}</div>`;
+  }
 }
 
 // ---- events & unified timeline ---------------------------------------
