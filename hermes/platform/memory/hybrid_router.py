@@ -15,10 +15,11 @@ from typing import Any, Dict, List, Optional
 from hermes.platform.memory.okf import OKFStore
 from hermes.platform.memory.graphrag import GraphRAGClient
 from hermes.platform.memory.reconciler import MemoryReconciler, ReconciliationResult, MemoryRecord
+from hermes.platform.memory.ragflow_engine import RAGFlowStore, DocumentChunk
 
 
 class HybridKnowledgeRouter:
-    """Intelligent router directing queries across Reconciled Memory, OKF, and GraphRAG."""
+    """Intelligent router directing queries across Reconciled Memory, OKF, RAGFlow, and GraphRAG."""
 
     def __init__(
         self,
@@ -26,12 +27,14 @@ class HybridKnowledgeRouter:
         graphrag_dir: Optional[Path] = None,
         reconciler_db_path: Optional[Path] = None,
         reconciler: Optional[MemoryReconciler] = None,
+        ragflow_store: Optional[RAGFlowStore] = None,
     ):
         self.okf_store = OKFStore(okf_dir)
         self.graphrag_client = (
             GraphRAGClient(index_dir=str(graphrag_dir)) if graphrag_dir else None
         )
         self.reconciler = reconciler or MemoryReconciler(db_path=reconciler_db_path)
+        self.ragflow_store = ragflow_store or RAGFlowStore()
 
     def reconcile_memory(
         self,
@@ -104,7 +107,26 @@ class HybridKnowledgeRouter:
                 "content": f"[SOURCE: CANONICAL KNOWLEDGE (OKF)]\nTitle: {okf_doc.title}\n\n{okf_doc.body}",
             }
 
-        # Step 2: If mode is hybrid or rag, attempt GraphRAG
+        # Step 2: Document index retrieval via RAGFlow (Breadcrumbs + RRF)
+        if self.ragflow_store:
+            try:
+                rag_chunks = self.ragflow_store.hybrid_search(query_str, limit=3)
+                if rag_chunks:
+                    formatted_content = "\n\n---\n\n".join(c.formatted_for_llm() for c in rag_chunks)
+                    top_c = rag_chunks[0]
+                    return {
+                        "source": "RAGFLOW_HYBRID",
+                        "deterministic": True,
+                        "found": True,
+                        "doc_path": top_c.doc_path,
+                        "provenance_anchor": top_c.provenance_anchor,
+                        "chunks": [c.to_dict() for c in rag_chunks],
+                        "content": f"[SOURCE: RAGFLOW DEEP DOCUMENT RETRIEVAL]\n{formatted_content}",
+                    }
+            except Exception as exc:
+                logger.warning("RAGFlow search failed: %s", exc)
+
+        # Step 3: If mode is hybrid or rag, attempt GraphRAG
         if mode in ("hybrid", "rag") and self.graphrag_client and self.graphrag_client.available():
             try:
                 rag_results = self.graphrag_client.query_global(query_str)

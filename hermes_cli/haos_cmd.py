@@ -518,6 +518,64 @@ def cmd_haos_graph_path(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_haos_doc_index(args: argparse.Namespace) -> int:
+    """Executes 'haos doc index <path>'."""
+    from hermes.platform.memory.ragflow_engine import RAGFlowStore
+    target_path = Path(args.path or ".").resolve()
+    store = RAGFlowStore()
+
+    print("=" * 60)
+    print("📚 HAOS RAGFlow — Deep Document Ingestion")
+    print(f"Target: {target_path}")
+    print("=" * 60)
+
+    if target_path.is_file():
+        count = store.index_file(target_path)
+        print(f"✓ Arquivo indexado: {target_path.name} ({count} chunks hierárquicos com proveniência)")
+    elif target_path.is_dir():
+        glob_pat = getattr(args, "pattern", None) or "**/*.md"
+        indexed = store.index_directory(target_path, glob_pattern=glob_pat)
+        total_chunks = sum(indexed.values())
+        print(f"✓ Diretório indexado: {len(indexed)} arquivos processados, {total_chunks} chunks gerados.")
+        for p, cnt in list(indexed.items())[:10]:
+            print(f"   • {Path(p).name}: {cnt} chunks")
+        if len(indexed) > 10:
+            print(f"   ... e mais {len(indexed) - 10} arquivos.")
+    else:
+        print(f"✗ Caminho não encontrado: {target_path}")
+        return 1
+    return 0
+
+
+def cmd_haos_doc_search(args: argparse.Namespace) -> int:
+    """Executes 'haos doc search <query>'."""
+    from hermes.platform.memory.ragflow_engine import RAGFlowStore
+    query = (args.query or "").strip()
+    limit = getattr(args, "limit", 5) or 5
+    store = RAGFlowStore()
+
+    print("=" * 60)
+    print("🔍 HAOS RAGFlow — Busca Híbrida RRF (FTS5 BM25 + Lexical)")
+    print(f"Query: {query!r} | Limite: {limit}")
+    print("=" * 60)
+
+    chunks = store.hybrid_search(query, limit=limit)
+    if not chunks:
+        print("Nenhum chunk correspondente encontrado.")
+        return 0
+
+    for i, c in enumerate(chunks, start=1):
+        print(f"\n[{i}] {c.doc_path} | {c.header_path or '(raiz)'}")
+        print(f"    Âncora: {c.provenance_anchor}")
+        snippet = c.content.strip().splitlines()
+        preview = "\n    ".join(snippet[:4])
+        print(f"    Conteúdo:\n    {preview}")
+        if len(snippet) > 4:
+            print(f"    ... (+ {len(snippet) - 4} linhas)")
+    print("\n" + "=" * 60)
+    return 0
+
+
 def cmd_haos_team_graph(args: argparse.Namespace) -> int:
     """Executes 'hermes haos team'."""
     from hermes.platform.observability.event_store import EventStore
@@ -783,6 +841,22 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     g_path.set_defaults(func=cmd_haos_graph_path)
 
     graph_parser.set_defaults(func=cmd_haos_graph_build)
+
+    # hermes haos doc [index|search] (RAGFlow Deep Document Understanding)
+    doc_parser = haos_sub.add_parser("doc", aliases=["rag"], help="Deep Document Understanding & RRF Search (RAGFlow Engine)")
+    doc_sub = doc_parser.add_subparsers(dest="doc_command")
+
+    d_index = doc_sub.add_parser("index", help="Indexa arquivo ou diretório markdown em SQLite FTS5 com breadcrumbs")
+    d_index.add_argument("path", nargs="?", default=".", help="Arquivo ou diretório a indexar")
+    d_index.add_argument("--pattern", default="**/*.md", help="Padrão glob para diretórios (padrão: **/*.md)")
+    d_index.set_defaults(func=cmd_haos_doc_index)
+
+    d_search = doc_sub.add_parser("search", help="Busca híbrida com Reciprocal Rank Fusion (RRF)")
+    d_search.add_argument("query", help="Consulta de busca")
+    d_search.add_argument("--limit", type=int, default=5, help="Limite de resultados (padrão: 5)")
+    d_search.set_defaults(func=cmd_haos_doc_search)
+
+    doc_parser.set_defaults(func=lambda args: doc_parser.print_help() or 0)
 
     # Default fallback when 'hermes haos' is run without subcommands
     haos_parser.set_defaults(func=lambda args: haos_parser.print_help() or 0)

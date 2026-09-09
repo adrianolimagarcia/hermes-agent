@@ -99,6 +99,18 @@ def main():
     g_path.add_argument("target", help="Símbolo de destino")
     g_path.add_argument("--dir", help="Diretório da base de código")
 
+    # Command: doc (RAGFlow Engine)
+    doc_parser = subparsers.add_parser("doc", aliases=["rag"], help="Deep Document Understanding & RRF Search (RAGFlow Engine)")
+    doc_sub = doc_parser.add_subparsers(dest="doc_action")
+
+    d_index = doc_sub.add_parser("index", help="Indexa arquivo ou diretório markdown em SQLite FTS5 com breadcrumbs")
+    d_index.add_argument("path", nargs="?", default=".", help="Arquivo ou diretório a indexar")
+    d_index.add_argument("--pattern", default="**/*.md", help="Padrão glob para diretórios (padrão: **/*.md)")
+
+    d_search = doc_sub.add_parser("search", help="Busca híbrida com Reciprocal Rank Fusion (RRF)")
+    d_search.add_argument("query", help="Consulta de busca")
+    d_search.add_argument("--limit", type=int, default=5, help="Limite de resultados")
+
     args = parser.parse_args()
 
     if args.command == "run":
@@ -109,6 +121,12 @@ def main():
             sys.exit(cmd_haos_graph_path(args))
         else:
             sys.exit(cmd_haos_graph_build(args))
+    elif args.command in ("doc", "rag"):
+        from hermes_cli.haos_cmd import cmd_haos_doc_index, cmd_haos_doc_search
+        if args.doc_action == "search":
+            sys.exit(cmd_haos_doc_search(args))
+        else:
+            sys.exit(cmd_haos_doc_index(args))
     elif args.command == "skills":
         from hermes_cli.haos_cmd import cmd_haos_skills_search, cmd_haos_skills_install, cmd_haos_skills_list
         if args.skills_action == "search":
