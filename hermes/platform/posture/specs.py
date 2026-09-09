@@ -110,3 +110,12 @@ class PostureResolver:
             capabilities_prefer=["git", "code-intelligence", "terminal"],
             requires_independent_review=True
         ))
+        self.register(PostureSpec(
+            id="ponytail",
+            name="Lazy Senior Developer (Ponytail)",
+            description="The best code is the code you never wrote. YAGNI, stdlib first, zero unrequested abstractions, -54% LOC.",
+            model_profile="coding-primary",
+            prompt_overlay=["system.constitution", "posture.ponytail"],
+            skills_preferred=["ponytail", "ponytail-review"],
+            capabilities_prefer=["terminal", "code-intelligence", "git"]
+        ))

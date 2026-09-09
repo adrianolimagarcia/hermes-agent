@@ -25,9 +25,24 @@ class ContextBuilder:
         )
 
         # 2. Posture Overlay
+        overlay_content = f"Posture {posture.name}: {posture.description}. Overlays: {posture.prompt_overlay}"
+        if posture.id == "ponytail" or "posture.ponytail" in posture.prompt_overlay:
+            overlay_content += (
+                "\n[PONYTAIL DECISION LADDER - LAZY SENIOR DEV]\n"
+                "Stop at the first rung that holds:\n"
+                "1. Does this need to exist? -> No: skip it (YAGNI).\n"
+                "2. Already in codebase? -> Reuse it, don't rewrite.\n"
+                "3. Stdlib does it? -> Use standard library primitives.\n"
+                "4. Native platform/browser feature? -> Use native HTML/CSS/OS features.\n"
+                "5. Installed dependency? -> Use it, zero new packages.\n"
+                "6. Can it be one line? -> One line.\n"
+                "7. Only then: minimum working code.\n"
+                "Rules: No unrequested abstractions. No boilerplate. Deletion over addition. Shortest working diff wins.\n"
+                "Never cut: trust-boundary validation, security, data-loss prevention, accessibility."
+            )
         sections["posture_overlay"] = SectionContent(
             trust_level="system",
-            content=f"Posture {posture.name}: {posture.description}. Overlays: {posture.prompt_overlay}"
+            content=overlay_content
         )
 
         # 3. Task Intent
