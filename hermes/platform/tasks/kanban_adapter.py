@@ -214,6 +214,8 @@ class KanbanAdapter:
         self._upsert_meta(task_id, spec, phase=phase)
         return task_id
 
+    upsert_task = save_task
+
     def _upsert_meta(self, task_id: str, spec: TaskSpec, phase: str = "triage") -> None:
         conn = self._connect()
         conn.execute(
@@ -486,6 +488,71 @@ class KanbanAdapter:
 
         return blocked
 
+    def record_task_blocked(
+        self,
+        task_id_or_spec: str,
+        *,
+        blocker_kind: str,
+        reason: str,
+        evidence: Optional[List[str]] = None,
+    ) -> bool:
+        """Registra bloqueio formal e tipado de uma tarefa (inspirado em ByteDance DeerFlow 2.0).
+
+        Transiciona a tarefa para status 'blocked' com categoria tipada
+        (missing_evidence, needs_user_input, run_failed, external_wait, goal_not_met_yet)
+        e evidências rastreáveis.
+        """
+        task_id = self._require_resolved(task_id_or_spec)
+        conn = self._connect()
+        from hermes.platform.execution.goal_blockers import GoalBlockerEvaluator
+        typed_kind = GoalBlockerEvaluator.classify_blocker_reason(blocker_kind)
+        ev_list = list(evidence or [])
+        blocker_meta = {
+            "kind": typed_kind.value,
+            "reason": reason,
+            "evidence": ev_list,
+            "blocked_at": time.time(),
+        }
+
+        # Atualiza status no Kanban upstream
+        cursor = conn.cursor()
+        cursor.execute("UPDATE tasks SET status='blocked' WHERE id=?", (task_id,))
+        conn.commit()
+
+        # Atualiza haos_task_meta com blocker estruturado
+        cursor.execute("SELECT spec_json FROM haos_task_meta WHERE task_id=?", (task_id,))
+        row = cursor.fetchone()
+        if row and row[0]:
+            try:
+                spec_data = json.loads(row[0])
+                spec_data["blocker"] = blocker_meta
+                cursor.execute(
+                    "UPDATE haos_task_meta SET spec_json=?, phase='blocked', updated_at=? WHERE task_id=?",
+                    (json.dumps(spec_data), time.time(), task_id),
+                )
+                conn.commit()
+            except Exception:
+                pass
+
+        if self.event_sink is not None and getattr(self.event_sink, "available", lambda: True)():
+            try:
+                from hermes.platform.observability.events import Event
+                self.event_sink.append_from_sync(Event(
+                    name="task.run.blocked",
+                    payload={
+                        "task_id": task_id,
+                        "blocker_kind": typed_kind.value,
+                        "reason": reason,
+                        "evidence": ev_list,
+                    },
+                    correlation_id=task_id,
+                    trust_level="internal",
+                ))
+            except Exception:
+                pass
+
+        return True
+
     def request_review(self, task_id_or_spec: str, *, reviewer: Optional[str] = None,
                        summary: Optional[str] = None) -> bool:
         """running/ready -> review (canonical review state machine)."""
@@ -543,17 +610,27 @@ class KanbanAdapter:
             "elapsed_seconds": round(elapsed_seconds, 1),
             "tokens": int(tokens),
             "cost": float(cost),
+            "blocker": json.loads((meta or {}).get("spec_json") or "{}").get("blocker"),
         }
 
     def list_tasks(self, *, status: Optional[str] = None,
                    include_archived: bool = False) -> List[Dict[str, Any]]:
         conn = self._connect()
         tasks = kb.list_tasks(conn, status=status, include_archived=include_archived)
-        return [
-            {"id": t.id, "title": t.title, "status": t.status, "assignee": t.assignee,
-             "priority": t.priority, "phase": (self._meta_row(t.id) or {}).get("phase")}
-            for t in tasks
-        ]
+        res = []
+        for t in tasks:
+            meta = self._meta_row(t.id) or {}
+            spec_dict = json.loads(meta.get("spec_json") or "{}")
+            res.append({
+                "id": t.id,
+                "title": t.title,
+                "status": t.status,
+                "assignee": t.assignee,
+                "priority": t.priority,
+                "phase": meta.get("phase"),
+                "blocker": spec_dict.get("blocker"),
+            })
+        return res
 
     def get_run(self, task_id_or_spec: str) -> Optional[TaskRun]:
         return self._load_run(self._require_resolved(task_id_or_spec))

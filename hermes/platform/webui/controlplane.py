@@ -177,6 +177,7 @@ class ControlPlaneService:
                     current_task=worker_data.get("task"),
                     tokens_consumed=worker_data.get("tokens", 0),
                     cost_usd=worker_data.get("cost", 0.0),
+                    metadata={"blocker": worker_data.get("blocker")} if worker_data.get("blocker") else {},
                 )
                 so_children.append(w_node)
 
@@ -448,6 +449,7 @@ class ControlPlaneService:
                 st = "blocked"
                 blocked_t = next(t for t in tasks_list if str(t.get("status", "")).lower() == "blocked")
                 cur_task = blocked_t.get("title") or blocked_t.get("body") or blocked_t.get("id")
+                blocker_info = blocked_t.get("blocker")
             elif has_failed:
                 st = "failed"
                 failed_t = next(t for t in tasks_list if str(t.get("status", "")).lower() in ("failed", "error"))
@@ -476,10 +478,13 @@ class ControlPlaneService:
                     "task": cur_task,
                     "tokens": 500,
                     "cost": 0.0005,
+                    "blocker": blocker_info if st == "blocked" else None,
                 }
             else:
                 workers_dict[assignee]["status"] = st
                 workers_dict[assignee]["task"] = cur_task
+                if st == "blocked":
+                    workers_dict[assignee]["blocker"] = blocker_info
 
         # 3. Contextual fallback if no workers discovered
         if not workers_dict:

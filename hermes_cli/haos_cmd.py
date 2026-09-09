@@ -555,6 +555,11 @@ def cmd_haos_team_graph(args: argparse.Namespace) -> int:
         print(f"{prefix}   • ID: {node.get('node_id')} | Postura: {role} | Modelo: {model}")
         if node.get("current_task"):
             print(f"{prefix}   • Tarefa Atual: {node.get('current_task')}")
+        blocker = (node.get("metadata") or {}).get("blocker")
+        if blocker:
+            b_kind = str(blocker.get("kind", "blocked")).upper()
+            b_reason = blocker.get("reason", "")
+            print(f"{prefix}   ⛔ BLOQUEIO [{b_kind}]: {b_reason}")
         for ch in node.get("children", []):
             print_node(ch, indent + 1)
 
