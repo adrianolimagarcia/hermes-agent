@@ -1,34 +1,98 @@
-"""Hybrid Knowledge Router (OKF + RAG/GraphRAG) for HAOS.
+"""Hybrid Knowledge Router (OKF + MemoryReconciler + RAG/GraphRAG) for HAOS.
 
-Combines deterministic, offline-first OKF knowledge bundles with
-probabilistic relational/vector GraphRAG retrieval.
-Works seamlessly offline (local files, local vault, local index).
+Combines:
+1. Reconciled active declarative memories (Mem0 mutation & conflict resolution: ADD/UPDATE/SUPERSEDE/NOOP).
+2. Deterministic, offline-first OKF canonical bundles.
+3. Probabilistic relational/vector GraphRAG retrieval.
+Works 100% offline with zero cloud dependency.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from hermes.platform.memory.okf import OKFStore
 from hermes.platform.memory.graphrag import GraphRAGClient
+from hermes.platform.memory.reconciler import MemoryReconciler, ReconciliationResult, MemoryRecord
 
 
 class HybridKnowledgeRouter:
-    """Intelligent router directing queries to deterministic OKF first, with RAG fallback."""
+    """Intelligent router directing queries across Reconciled Memory, OKF, and GraphRAG."""
 
-    def __init__(self, okf_dir: Path, graphrag_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        okf_dir: Path,
+        graphrag_dir: Optional[Path] = None,
+        reconciler_db_path: Optional[Path] = None,
+        reconciler: Optional[MemoryReconciler] = None,
+    ):
         self.okf_store = OKFStore(okf_dir)
         self.graphrag_client = (
             GraphRAGClient(index_dir=str(graphrag_dir)) if graphrag_dir else None
         )
+        self.reconciler = reconciler or MemoryReconciler(db_path=reconciler_db_path)
+
+    def reconcile_memory(
+        self,
+        *,
+        topic: str,
+        content: str,
+        category: str = "general",
+        confidence: float = 1.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ReconciliationResult:
+        """Mutate and reconcile a candidate fact with conflict resolution (ADD, UPDATE, SUPERSEDE, NOOP)."""
+        return self.reconciler.reconcile(
+            topic=topic,
+            content=content,
+            category=category,
+            confidence=confidence,
+            metadata=metadata,
+        )
+
+    def get_active_memories(
+        self,
+        *,
+        topic: Optional[str] = None,
+        category: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[MemoryRecord]:
+        """Retrieve active facts only (superseded facts are never returned)."""
+        return self.reconciler.get_active_memories(topic=topic, category=category, limit=limit)
 
     def query(self, query_str: str, mode: str = "hybrid") -> Dict[str, Any]:
         """Perform routed query.
 
-        1. Deterministic path: Check OKF store first.
-        2. Probabilistic path: Fallback to GraphRAG if no deterministic match is found.
+        1. Reconciled Memory path: Match active memories for the topic/query.
+        2. Deterministic path: Check OKF store.
+        3. Probabilistic path: Fallback to GraphRAG if no deterministic match is found.
+        4. OKF broad fuzzy search fallback.
         """
+        clean_q = query_str.strip().lower()
+
+        # Step 0: Check active reconciled memories
+        active_mems = self.reconciler.get_active_memories(topic=clean_q)
+        if not active_mems:
+            # Check for substring match in active memories content or topic
+            all_active = self.reconciler.get_active_memories(limit=100)
+            active_mems = [
+                m for m in all_active
+                if clean_q in m.topic.lower() or clean_q in m.content.lower() or m.topic.lower() in clean_q
+            ]
+
+        if active_mems:
+            top_mem = active_mems[0]
+            return {
+                "source": "RECONCILED_MEMORY",
+                "deterministic": True,
+                "found": True,
+                "memory_id": top_mem.id,
+                "topic": top_mem.topic,
+                "status": top_mem.status,
+                "content": f"[SOURCE: RECONCILED ACTIVE MEMORY ({top_mem.topic})]\n{top_mem.content}",
+            }
+
         # Step 1: Deterministic lookup via OKF
         okf_doc = self.okf_store.find_deterministic(query_str)
         if okf_doc:
@@ -40,7 +104,7 @@ class HybridKnowledgeRouter:
                 "content": f"[SOURCE: CANONICAL KNOWLEDGE (OKF)]\nTitle: {okf_doc.title}\n\n{okf_doc.body}",
             }
 
-        # If deterministic match not found and mode is hybrid, attempt RAG
+        # Step 2: If mode is hybrid or rag, attempt GraphRAG
         if mode in ("hybrid", "rag") and self.graphrag_client and self.graphrag_client.available():
             try:
                 rag_results = self.graphrag_client.query_global(query_str)
@@ -59,7 +123,7 @@ class HybridKnowledgeRouter:
                     "error": str(exc),
                 }
 
-        # Step 3: Broader search in OKF as second-tier fallback before failing
+        # Step 3: Broader search in OKF as fallback before failing
         broader_matches = self.okf_store.search_all(query_str)
         if broader_matches:
             top_match = broader_matches[0]

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from hermes_constants import get_hermes_home
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
+from hermes.platform.memory.reconciler import MemoryReconciler
 
 
 class DreamError(RuntimeError):
@@ -148,6 +149,7 @@ class DreamConsolidator:
         self.vault_adrs_dir = self.memory_dir / "vault" / "adrs"
         self.cursor_file = self.memory_dir / ".dream_cursor"
         self.git_store = DreamGitStore(self.memory_dir)
+        self.reconciler = MemoryReconciler(self.memory_dir / "reconciled_memories.db")
 
     def get_cursor(self) -> float:
         """Timestamp of last consolidated session."""
@@ -191,6 +193,7 @@ class DreamConsolidator:
             }
 
         consolidated = 0
+        reconciliation_stats = {"ADD": 0, "UPDATE": 0, "SUPERSEDE": 0, "NOOP": 0}
         max_ts = last_cursor
 
         for s in reversed(candidates):
@@ -228,7 +231,7 @@ class DreamConsolidator:
                 consolidated += 1
 
                 # ECC Instinct extraction from session: if session recorded learnings/heuristics
-                if not dry_run and "sempre" in preview.lower() or "nunca" in preview.lower() or "erro" in preview.lower():
+                if not dry_run and ("sempre" in preview.lower() or "nunca" in preview.lower() or "erro" in preview.lower()):
                     try:
                         from hermes.platform.memory.instincts import InstinctStore
                         instinct_store = InstinctStore(self.memory_dir / "instincts")
@@ -243,21 +246,44 @@ class DreamConsolidator:
                     except Exception as _ins_err:
                         logger.debug("Dream instinct distillation failed: %s", _ins_err)
 
+                # Mem0-inspired declarative memory reconciliation
+                if not dry_run and any(k in preview.lower() for k in ("preferência", "preferencia", "usando", "migramos", "banco", "framework", "agora usamos", "não usamos")):
+                    try:
+                        fact_candidate = preview.split(".")[0].strip()[:180]
+                        if len(fact_candidate) > 10:
+                            topic = "general"
+                            for cand_topic in ("banco", "database", "ui", "framework", "style", "language", "auth", "tool"):
+                                if cand_topic in fact_candidate.lower():
+                                    topic = cand_topic
+                                    break
+                            rec_res = self.reconciler.reconcile(
+                                topic=topic,
+                                content=fact_candidate,
+                                category="session_fact",
+                                metadata={"session_id": sid, "source": "dream"},
+                            )
+                            if rec_res.action in reconciliation_stats:
+                                reconciliation_stats[rec_res.action] += 1
+                    except Exception as _rec_err:
+                        logger.debug("Dream memory reconciliation failed: %s", _rec_err)
+
         if dry_run:
             return {
                 "status": "dry_run",
                 "consolidated_count": consolidated,
+                "reconciliation": reconciliation_stats,
                 "commit": None,
             }
 
         self.set_cursor(max_ts)
         commit_info = self.git_store.commit_changes(
-            subject=f"dream: consolidate {consolidated} session(s)"
+            subject=f"dream: consolidate {consolidated} session(s) [reconciled: +{reconciliation_stats['ADD']} ~{reconciliation_stats['UPDATE']} !{reconciliation_stats['SUPERSEDE']}]"
         )
 
         return {
             "status": "success",
             "consolidated_count": consolidated,
+            "reconciliation": reconciliation_stats,
             "commit": commit_info.sha if commit_info else None,
             "timestamp": commit_info.timestamp if commit_info else None,
         }
