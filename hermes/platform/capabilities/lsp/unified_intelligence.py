@@ -8,8 +8,10 @@ Strict stdlib-only; PEP-420 namespace compliant.
 
 from __future__ import annotations
 
+import ast
 import collections
 import dataclasses
+import json
 import os
 import pathlib
 from dataclasses import dataclass, field
@@ -148,6 +150,235 @@ class CodeSymbolGraph:
         """Return all symbols declared in file_path."""
         sym_ids = self.file_symbols.get(file_path, set())
         return [self.symbols[sid] for sid in sym_ids if sid in self.symbols]
+
+    def scan_directory(
+        self,
+        root_dir: str,
+        exclude_dirs: Optional[Set[str]] = None,
+        max_files: int = 1000,
+    ) -> int:
+        """Scan a codebase directory using native AST and populate nodes/edges."""
+        excludes = exclude_dirs or {
+            ".git", ".venv", "venv", "__pycache__", ".worktrees", ".haos", "dist", "build", "node_modules"
+        }
+        count = 0
+        root_path = pathlib.Path(root_dir)
+
+        class _ASTCallVisitor(ast.NodeVisitor):
+            def __init__(self, rel_p: str, graph: CodeSymbolGraph):
+                self.rel_p = rel_p
+                self.graph = graph
+                self.scope_stack: List[str] = []
+
+            def visit_ClassDef(self, node: ast.ClassDef):
+                self.scope_stack.append(node.name)
+                self.generic_visit(node)
+                self.scope_stack.pop()
+
+            def visit_FunctionDef(self, node: ast.FunctionDef):
+                self.scope_stack.append(node.name)
+                self.generic_visit(node)
+                self.scope_stack.pop()
+
+            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
+                self.visit_FunctionDef(node)
+
+            def visit_Call(self, node: ast.Call):
+                callee_name = None
+                if isinstance(node.func, ast.Name):
+                    callee_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    callee_name = node.func.attr
+                if callee_name:
+                    current_scope = ".".join(self.scope_stack) if self.scope_stack else "module"
+                    caller_id = f"{self.rel_p}::{current_scope}"
+                    self.graph.add_call(caller_id, callee_name)
+                    if self.scope_stack:
+                        self.graph.add_call(self.scope_stack[-1], callee_name)
+                self.generic_visit(node)
+
+        for dirpath, dirnames, filenames in os.walk(root_path):
+            dirnames[:] = [d for d in dirnames if d not in excludes and not d.startswith(".")]
+            for fname in filenames:
+                if not fname.endswith(".py"):
+                    continue
+                full_path = pathlib.Path(dirpath) / fname
+                try:
+                    rel_path = str(full_path.relative_to(root_path))
+                except Exception:
+                    rel_path = str(full_path)
+
+                try:
+                    code_text = full_path.read_text(encoding="utf-8", errors="ignore")
+                    tree = ast.parse(code_text, filename=rel_path)
+                except Exception:
+                    continue
+
+                current_container = None
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef):
+                        current_container = node.name
+                        sym = SymbolNode(
+                            name=node.name,
+                            kind="class",
+                            file_path=rel_path,
+                            location=SymbolLocation(file_path=rel_path, line=node.lineno, character=node.col_offset),
+                            docstring=ast.get_docstring(node),
+                        )
+                        self.add_symbol(sym)
+                        count += 1
+                    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        sym = SymbolNode(
+                            name=node.name,
+                            kind="function" if current_container is None else "method",
+                            file_path=rel_path,
+                            container_name=current_container,
+                            location=SymbolLocation(file_path=rel_path, line=node.lineno, character=node.col_offset),
+                            docstring=ast.get_docstring(node),
+                        )
+                        self.add_symbol(sym)
+                        count += 1
+
+                # Extract calls using scoped visitor
+                visitor = _ASTCallVisitor(rel_path, self)
+                visitor.visit(tree)
+
+                if count >= max_files * 10:
+                    break
+        return count
+
+    def find_path(self, start: str, target: str, max_depth: int = 15) -> Optional[List[str]]:
+        """Breadth-First Search (BFS) to find the shortest call/dependency path between two symbols/components."""
+        start_id = start
+        target_id = target
+
+        matches_start = self.find_symbols_by_name(start)
+        if matches_start:
+            start_id = matches_start[0].id
+        matches_target = self.find_symbols_by_name(target)
+        if matches_target:
+            target_id = matches_target[0].id
+
+        if start_id == target_id:
+            return [start_id]
+
+        queue: collections.deque[List[str]] = collections.deque([[start_id]])
+        visited: Set[str] = {start_id}
+
+        while queue:
+            path = queue.popleft()
+            curr = path[-1]
+
+            if len(path) > max_depth:
+                continue
+
+            neighbors = set(self.call_callees.get(curr, set()))
+            curr_sym = self.symbols.get(curr)
+            if curr_sym:
+                neighbors.update(self.call_callees.get(curr_sym.name, set()))
+
+            for nxt in neighbors:
+                if nxt == target_id or nxt == target or (nxt in self.symbols and self.symbols[nxt].name == target):
+                    return path + [nxt]
+
+                if nxt not in visited:
+                    visited.add(nxt)
+                    queue.append(path + [nxt])
+
+        return None
+
+    def identify_god_components(self, top_k: int = 10) -> List[Dict[str, Any]]:
+        """Identify components/files with highest coupling (fan-in + fan-out)."""
+        file_coupling = collections.defaultdict(lambda: {"symbols": 0, "in_degree": 0, "out_degree": 0})
+
+        for sym in self.symbols.values():
+            fpath = sym.file_path
+            file_coupling[fpath]["symbols"] += 1
+            file_coupling[fpath]["in_degree"] += len(self.call_callers.get(sym.id, set())) + len(self.call_callers.get(sym.name, set()))
+            file_coupling[fpath]["out_degree"] += len(self.call_callees.get(sym.id, set())) + len(self.call_callees.get(sym.name, set()))
+
+        results = []
+        for fpath, metrics in file_coupling.items():
+            total = metrics["in_degree"] + metrics["out_degree"]
+            results.append({
+                "file_path": fpath,
+                "symbols_count": metrics["symbols"],
+                "in_degree": metrics["in_degree"],
+                "out_degree": metrics["out_degree"],
+                "coupling_score": total,
+            })
+
+        results.sort(key=lambda x: x["coupling_score"], reverse=True)
+        return results[:top_k]
+
+    def export_graph_report(self, output_dir: str = ".haos/graphify-out") -> Dict[str, str]:
+        """Export graph.json and GRAPH_REPORT.md inspired by Graphify."""
+        out_path = pathlib.Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        nodes = [
+            {
+                "id": s.id,
+                "name": s.name,
+                "kind": s.kind,
+                "file": s.file_path,
+                "line": s.location.line,
+            }
+            for s in self.symbols.values()
+        ]
+        edges = []
+        for caller, callees in self.call_callees.items():
+            for callee in callees:
+                edges.append({"source": caller, "target": callee, "type": "calls"})
+
+        graph_payload = {
+            "summary": {
+                "nodes_count": len(nodes),
+                "edges_count": len(edges),
+                "files_count": len(self.file_symbols),
+            },
+            "nodes": nodes,
+            "edges": edges,
+        }
+        json_file = out_path / "graph.json"
+        json_file.write_text(json.dumps(graph_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        gods = self.identify_god_components(top_k=5)
+        report_lines = [
+            "# HAOS Code Knowledge Graph Report (Graphify Engine)",
+            "",
+            f"**Generated Directory:** `{out_path}`",
+            f"- **Total Files:** `{len(self.file_symbols)}`",
+            f"- **Total Symbols (Nodes):** `{len(nodes)}`",
+            f"- **Total Dependency Edges:** `{len(edges)}`",
+            "",
+            "## 🚨 Top Coupled Components (God Components)",
+            "Files with highest fan-in/fan-out require extra caution and isolated test suites before refactoring:",
+            "",
+            "| File Path | Symbols | In-Degree (Callers) | Out-Degree (Callees) | Coupling Score |",
+            "| :--- | :---: | :---: | :---: | :---: |",
+        ]
+        for g in gods:
+            report_lines.append(
+                f"| `{g['file_path']}` | {g['symbols_count']} | {g['in_degree']} | {g['out_degree']} | **{g['coupling_score']}** |"
+            )
+
+        report_lines.extend([
+            "",
+            "## 🛡️ Agent Recommendations",
+            "1. Check `graph.json` before altering signatures of top coupled components.",
+            "2. Use `haos graph path <source> <target>` to map dependency trajectories.",
+            "3. Run `haos evolution blast-radius <file>` before committing changes to high-coupling files.",
+            ""
+        ])
+
+        report_file = out_path / "GRAPH_REPORT.md"
+        report_file.write_text("\n".join(report_lines), encoding="utf-8")
+
+        return {
+            "graph_json": str(json_file),
+            "graph_report": str(report_file),
+        }
 
 
 class ImpactAnalyzer:

@@ -86,10 +86,29 @@ def main():
 
     sk_list = skills_sub.add_parser("list", help="Lista habilidades locais registradas")
 
+    # Command: graph
+    graph_parser = subparsers.add_parser("graph", help="Code Knowledge Graph determinístico (Graphify Engine)")
+    graph_sub = graph_parser.add_subparsers(dest="graph_action")
+
+    g_build = graph_sub.add_parser("build", help="Varre a base de código e gera graph.json e GRAPH_REPORT.md")
+    g_build.add_argument("--dir", help="Diretório da base de código")
+    g_build.add_argument("--out", help="Diretório de saída")
+
+    g_path = graph_sub.add_parser("path", help="Encontra o menor caminho entre dois símbolos ou componentes")
+    g_path.add_argument("source", help="Símbolo de origem")
+    g_path.add_argument("target", help="Símbolo de destino")
+    g_path.add_argument("--dir", help="Diretório da base de código")
+
     args = parser.parse_args()
 
     if args.command == "run":
         asyncio.run(execute_task(args))
+    elif args.command == "graph":
+        from hermes_cli.haos_cmd import cmd_haos_graph_build, cmd_haos_graph_path
+        if args.graph_action == "path":
+            sys.exit(cmd_haos_graph_path(args))
+        else:
+            sys.exit(cmd_haos_graph_build(args))
     elif args.command == "skills":
         from hermes_cli.haos_cmd import cmd_haos_skills_search, cmd_haos_skills_install, cmd_haos_skills_list
         if args.skills_action == "search":

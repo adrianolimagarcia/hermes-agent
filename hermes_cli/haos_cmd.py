@@ -457,6 +457,67 @@ def cmd_haos_evolution_blast_radius(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_haos_graph_build(args: argparse.Namespace) -> int:
+    """Executes 'haos graph build [--dir <dir>] [--out <out_dir>]'."""
+    from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph
+    import os
+
+    target_dir = getattr(args, "dir", None) or os.getcwd()
+    out_dir = getattr(args, "out", None) or os.path.join(target_dir, ".haos", "graphify-out")
+
+    graph = CodeSymbolGraph()
+    print(f"[*] Varrendo base de código com AST nativo em: {target_dir}")
+    symbols_found = graph.scan_directory(target_dir)
+
+    artifacts = graph.export_graph_report(out_dir)
+    gods = graph.identify_god_components(top_k=5)
+
+    print("=" * 65)
+    print("      HAOS CODE KNOWLEDGE GRAPH (GRAPHIFY ENGINE)      ")
+    print("=" * 65)
+    print(f"Símbolos indexados : {symbols_found}")
+    print(f"Arquivos mapeados  : {len(graph.file_symbols)}")
+    print(f"Grafo JSON         : {artifacts['graph_json']}")
+    print(f"Relatório Markdown : {artifacts['graph_report']}")
+    print("-" * 65)
+    print("🚨 TOP 5 COMPONENTES COM MAIOR ACOPLAMENTO (GOD COMPONENTS):")
+    for g in gods:
+        print(f" • {g['file_path']:<40} (Score: {g['coupling_score']})")
+    print("=" * 65)
+    return 0
+
+
+def cmd_haos_graph_path(args: argparse.Namespace) -> int:
+    """Executes 'haos graph path <source> <target> [--dir <dir>]'."""
+    from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph
+    import os
+
+    target_dir = getattr(args, "dir", None) or os.getcwd()
+    graph = CodeSymbolGraph()
+    graph.scan_directory(target_dir)
+
+    source = args.source
+    target = args.target
+    path = graph.find_path(source, target)
+
+    print("=" * 60)
+    print("          HAOS CODE KNOWLEDGE GRAPH — PATH TRACER         ")
+    print("=" * 60)
+    print(f"Origem : {source}")
+    print(f"Destino: {target}")
+    print("-" * 60)
+    if path:
+        print("✓ Trajetória encontrada:")
+        for idx, step in enumerate(path):
+            indent = "  " * idx
+            arrow = "└──> " if idx > 0 else "• "
+            print(f"{indent}{arrow}{step}")
+    else:
+        print(f"✗ Nenhum caminho de chamada direto encontrado entre '{source}' e '{target}'.")
+    print("=" * 60)
+    return 0
+
+
 def cmd_haos_team_graph(args: argparse.Namespace) -> int:
     """Executes 'hermes haos team'."""
     from hermes.platform.observability.event_store import EventStore
@@ -700,6 +761,23 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     eval_parser.add_argument("--label", default="current", help="Rótulo da medição (ex: baseline-v1, deepseek-v4)")
     eval_parser.add_argument("--json", action="store_true", help="Output metrics as JSON")
     eval_parser.set_defaults(func=cmd_haos_eval)
+
+    # hermes haos graph [build|path]
+    graph_parser = haos_sub.add_parser("graph", help="Code Knowledge Graph determinístico (Graphify Engine)")
+    graph_sub = graph_parser.add_subparsers(dest="graph_command")
+
+    g_build = graph_sub.add_parser("build", help="Varre a base de código e gera graph.json e GRAPH_REPORT.md")
+    g_build.add_argument("--dir", help="Diretório da base de código (padrão: atual)")
+    g_build.add_argument("--out", help="Diretório de saída (padrão: .haos/graphify-out)")
+    g_build.set_defaults(func=cmd_haos_graph_build)
+
+    g_path = graph_sub.add_parser("path", help="Encontra o caminho BFS de dependência/chamada mais curto entre dois nós")
+    g_path.add_argument("source", help="Símbolo ou arquivo de origem")
+    g_path.add_argument("target", help="Símbolo ou arquivo de destino")
+    g_path.add_argument("--dir", help="Diretório da base de código (padrão: atual)")
+    g_path.set_defaults(func=cmd_haos_graph_path)
+
+    graph_parser.set_defaults(func=cmd_haos_graph_build)
 
     # Default fallback when 'hermes haos' is run without subcommands
     haos_parser.set_defaults(func=lambda args: haos_parser.print_help() or 0)
