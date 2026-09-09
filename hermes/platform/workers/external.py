@@ -38,12 +38,25 @@ def resolve_external_worker(assignee: str, task_context: Dict[str, Any]) -> Opti
     - 'acp', 'acp:<server>', 'claude-code', 'codex'
     """
     assignee_clean = (assignee or "").strip().lower()
+    task_id = str(task_context.get("task_id", ""))
+
+    # Determine workspace and optional git worktree isolation (Orca ADE pattern)
+    workspace = str(task_context.get("workspace", "")).strip() or os.getcwd()
+    if task_context.get("isolated") or task_context.get("use_worktree") or task_context.get("workspace_type") == "worktree":
+        try:
+            from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+            repo = Path(workspace).resolve()
+            mgr = GitWorktreeManager(repo_root=repo)
+            if mgr.is_git_repo():
+                wt_path = mgr.create_worktree(task_id=task_id)
+                workspace = str(wt_path)
+                logger.info("Provisioned isolated Git worktree for worker '%s' at %s", assignee_clean, wt_path)
+        except Exception as exc:
+            logger.warning("Could not provision isolated worktree for task %s: %s", task_id, exc)
 
     # DSH (DeepSeek Harness) Connector
     if assignee_clean.startswith("dsh"):
         dsh_bin = shutil.which("dsh") or os.environ.get("DSH_PATH") or "dsh"
-        task_id = str(task_context.get("task_id", ""))
-        workspace = str(task_context.get("workspace", ""))
         objective = task_context.get("title", f"Complete task {task_id}")
 
         args = [
@@ -59,14 +72,13 @@ def resolve_external_worker(assignee: str, task_context: Dict[str, Any]) -> Opti
             env_vars={
                 "HAOS_EXTERNAL_WORKER": "dsh",
                 "HAOS_KANBAN_TASK_ID": task_id,
+                "HAOS_WORKTREE_PATH": workspace,
             }
         )
 
     # ACP (Agent Client Protocol) Connector
     if assignee_clean.startswith("acp") or assignee_clean in {"claude-code", "codex"}:
         acp_bin = shutil.which("hermes-acp") or shutil.which("acp") or "acp"
-        task_id = str(task_context.get("task_id", ""))
-        workspace = str(task_context.get("workspace", ""))
         return ExternalWorkerSpec(
             kind="acp",
             executable=acp_bin,
@@ -74,6 +86,7 @@ def resolve_external_worker(assignee: str, task_context: Dict[str, Any]) -> Opti
             env_vars={
                 "HAOS_EXTERNAL_WORKER": "acp",
                 "HAOS_KANBAN_TASK_ID": task_id,
+                "HAOS_WORKTREE_PATH": workspace,
             }
         )
 

@@ -436,8 +436,14 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._workspaces_add()
         elif self.command == "GET" and path == "/api/workspaces/context":
             self._workspaces_context()
+        elif self.command == "GET" and path == "/api/workspaces/worktrees":
+            self._workspaces_list_worktrees()
         elif self.command == "POST" and path == "/api/workspaces/worktrees":
             self._workspaces_create_worktree()
+        elif self.command == "POST" and path == "/api/workspaces/worktrees/remove":
+            self._workspaces_remove_worktree()
+        elif self.command == "POST" and path == "/api/workspaces/worktrees/merge":
+            self._workspaces_merge_worktree()
         elif self.command == "GET" and path == "/api/fs/browse":
             self._fs_browse()
         elif self.command == "POST" and path == "/api/fs/mkdir":
@@ -1053,20 +1059,67 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             "has_graphrag": graphrag_dir.is_dir(),
         })
 
+    def _workspaces_list_worktrees(self) -> None:
+        query_str = urlparse(self.path).query
+        params = parse_qs(query_str)
+        repo_root = params.get("repo_root", [None])[0] or os.getcwd()
+        from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+        mgr = GitWorktreeManager(repo_root=Path(repo_root))
+        try:
+            wts = mgr.list_worktrees()
+            self._send_json(200, {"worktrees": wts, "count": len(wts)})
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
+
     def _workspaces_create_worktree(self) -> None:
         body = self._read_json_body()
         task_id = str(body.get("task_id") or f"t_{uuid.uuid4().hex[:6]}")
         repo_root = body.get("repo_root") or os.getcwd()
+        base_branch = body.get("base_branch")
         from hermes.platform.workspaces.git_worktree import GitWorktreeManager
         mgr = GitWorktreeManager(repo_root=Path(repo_root))
         try:
-            wt_path = mgr.create_worktree(task_id=task_id)
+            wt_path = mgr.create_worktree(task_id=task_id, base_branch=base_branch)
             self._send_json(200, {
                 "success": True,
                 "task_id": task_id,
                 "worktree_path": str(wt_path),
                 "branch": f"haos/task-{task_id}",
             })
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
+
+    def _workspaces_remove_worktree(self) -> None:
+        body = self._read_json_body()
+        task_id = str(body.get("task_id") or "").strip()
+        repo_root = body.get("repo_root") or os.getcwd()
+        force = bool(body.get("force", True))
+        delete_branch = bool(body.get("delete_branch", False))
+        if not task_id:
+            self._send_json(400, {"error": "task_id_required"})
+            return
+        from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+        mgr = GitWorktreeManager(repo_root=Path(repo_root))
+        try:
+            removed = mgr.remove_worktree(task_id=task_id, force=force, delete_branch=delete_branch)
+            self._send_json(200, {"success": True, "task_id": task_id, "removed": removed})
+        except Exception as exc:
+            self._send_json(500, {"error": str(exc)})
+
+    def _workspaces_merge_worktree(self) -> None:
+        body = self._read_json_body()
+        task_id = str(body.get("task_id") or "").strip()
+        repo_root = body.get("repo_root") or os.getcwd()
+        target_branch = body.get("target_branch")
+        squash = bool(body.get("squash", False))
+        if not task_id:
+            self._send_json(400, {"error": "task_id_required"})
+            return
+        from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+        mgr = GitWorktreeManager(repo_root=Path(repo_root))
+        try:
+            res = mgr.merge_worktree(task_id=task_id, target_branch=target_branch, squash=squash)
+            self._send_json(200, res)
         except Exception as exc:
             self._send_json(500, {"error": str(exc)})
 
