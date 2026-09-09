@@ -153,10 +153,29 @@ fi
 # 6. Install Global CLI Wrappers
 log_step "Installing global CLI wrappers..."
 mkdir -p "$BIN_DIR"
+mkdir -p "$HAOS_HOME"
+
+# Inherit .hermes config and credentials if available
+if [ -d "$HOME/.hermes" ]; then
+    if [ ! -e "$HAOS_HOME/.env" ] && [ -f "$HOME/.hermes/.env" ]; then
+        ln -sf "$HOME/.hermes/.env" "$HAOS_HOME/.env"
+        log_info "Inherited .env from $HOME/.hermes/.env"
+    fi
+    if [ ! -e "$HAOS_HOME/config.yaml" ] && [ -f "$HOME/.hermes/config.yaml" ]; then
+        ln -sf "$HOME/.hermes/config.yaml" "$HAOS_HOME/config.yaml"
+        log_info "Inherited config.yaml from $HOME/.hermes/config.yaml"
+    fi
+fi
 
 cat << EOF > "$BIN_DIR/haos"
 #!/usr/bin/env bash
 export HAOS_HOME="\${HAOS_HOME:-$HAOS_HOME}"
+HERMES_DIR="\${HERMES_HOME:-\$HOME/.hermes}"
+if [ -d "\$HERMES_DIR" ]; then
+    mkdir -p "\$HAOS_HOME"
+    [ ! -e "\$HAOS_HOME/.env" ] && [ -f "\$HERMES_DIR/.env" ] && ln -sf "\$HERMES_DIR/.env" "\$HAOS_HOME/.env"
+    [ ! -e "\$HAOS_HOME/config.yaml" ] && [ -f "\$HERMES_DIR/config.yaml" ] && ln -sf "\$HERMES_DIR/config.yaml" "\$HAOS_HOME/config.yaml"
+fi
 export HERMES_HOME="\${HAOS_HOME}"
 export HAOS_DATA_DIR="\${HAOS_DATA_DIR:-\$HAOS_HOME}"
 unset PYTHONPATH
@@ -173,6 +192,12 @@ chmod +x "$BIN_DIR/haos"
 cat << EOF > "$BIN_DIR/haos-agent"
 #!/usr/bin/env bash
 export HAOS_HOME="\${HAOS_HOME:-$HAOS_HOME}"
+HERMES_DIR="\${HERMES_HOME:-\$HOME/.hermes}"
+if [ -d "\$HERMES_DIR" ]; then
+    mkdir -p "\$HAOS_HOME"
+    [ ! -e "\$HAOS_HOME/.env" ] && [ -f "\$HERMES_DIR/.env" ] && ln -sf "\$HERMES_DIR/.env" "\$HAOS_HOME/.env"
+    [ ! -e "\$HAOS_HOME/config.yaml" ] && [ -f "\$HERMES_DIR/config.yaml" ] && ln -sf "\$HERMES_DIR/config.yaml" "\$HAOS_HOME/config.yaml"
+fi
 export HERMES_HOME="\${HAOS_HOME}"
 export HAOS_DATA_DIR="\${HAOS_DATA_DIR:-\$HAOS_HOME}"
 unset PYTHONPATH
