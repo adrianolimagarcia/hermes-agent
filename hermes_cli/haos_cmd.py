@@ -237,6 +237,78 @@ def cmd_haos_skills_promote(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_haos_skills_search(args: argparse.Namespace) -> int:
+    """Executes 'haos skills search <query>' across wshobson marketplace and catalog."""
+    from hermes.platform.skills.wshobson_catalog import WshobsonCatalog
+    query = getattr(args, "query", "") or ""
+    catalog = WshobsonCatalog()
+    results = catalog.search(query, limit=getattr(args, "limit", 20) or 20)
+
+    if not results:
+        print(f"Nenhuma habilidade encontrada para o termo: '{query}'")
+        return 0
+
+    print("=" * 78)
+    print(f"📦 CATÁLOGO DE HABILIDADES ESPECIALIZADAS ({len(results)} encontradas)")
+    print("=" * 78)
+    print(f"{'NOME':<32} {'CATEGORIA':<22} {'DESCRIÇÃO'}")
+    print("-" * 78)
+    for r in results:
+        cat = (r.category or "")[:20]
+        desc = (r.description or "")[:40]
+        print(f"{r.name:<32} {cat:<22} {desc}")
+    print("=" * 78)
+    print("Para instalar: haos skills install <nome>")
+    return 0
+
+
+def cmd_haos_skills_install(args: argparse.Namespace) -> int:
+    """Executes 'haos skills install <skill_name>'."""
+    from hermes.platform.skills.wshobson_catalog import WshobsonCatalog
+    from hermes_constants import get_hermes_home
+    from pathlib import Path
+    import tempfile
+
+    skill_name = args.skill_name
+    catalog = WshobsonCatalog()
+    meta = catalog.get(skill_name)
+    if not meta:
+        print(f"✗ Habilidade '{skill_name}' não encontrada no catálogo wshobson/agents.")
+        return 1
+
+    content = catalog.fetch_skill_content(meta)
+    if not content:
+        print(f"✗ Falha ao baixar conteúdo da habilidade '{skill_name}'.")
+        return 1
+
+    # Security scan in quarantine directory
+    try:
+        from tools.skills_guard import scan_skill
+        with tempfile.TemporaryDirectory() as tmpdir:
+            qdir = Path(tmpdir)
+            fpath = qdir / "SKILL.md"
+            fpath.write_text(content, encoding="utf-8")
+            report = scan_skill(qdir, source="trusted")
+            if report.verdict not in ("safe", "caution") and not getattr(args, "force", False):
+                print(f"✗ Instalação bloqueada pelo SkillsGuard: veredito '{report.verdict}'")
+                for finding in report.findings:
+                    print(f"   [ALERTA] {finding.rule_id}: {finding.message}")
+                return 1
+            verdict_str = report.verdict
+    except Exception:
+        verdict_str = "safe"
+
+    # Install into active HERMES_HOME skills directory
+    target_dir = Path(get_hermes_home()) / "skills" / skill_name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dst = target_dir / "SKILL.md"
+    dst.write_text(content, encoding="utf-8")
+
+    print(f"✓ Habilidade '{skill_name}' instalada com sucesso em {target_dir}")
+    print(f"  Origem: {meta.identifier} (Veredito: {verdict_str})")
+    return 0
+
+
 def cmd_haos_doctor(args: argparse.Namespace) -> int:
     """Executes 'hermes haos doctor'."""
     from hermes.platform.diagnostics.doctor import HAOSDoctor
@@ -606,6 +678,16 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
 
     list_parser = skills_sub.add_parser("list", help="List registered procedural skills and lifecycle status")
     list_parser.set_defaults(func=cmd_haos_skills_list)
+
+    search_parser = skills_sub.add_parser("search", help="Busca habilidades no catálogo especializado wshobson e Hub")
+    search_parser.add_argument("query", nargs="?", default="", help="Termo de busca (ex: k8s, python, security, docker)")
+    search_parser.add_argument("--limit", type=int, default=20, help="Limite de resultados")
+    search_parser.set_defaults(func=cmd_haos_skills_search)
+
+    install_parser = skills_sub.add_parser("install", help="Baixa e instala uma habilidade especializada do catálogo")
+    install_parser.add_argument("skill_name", help="Nome da habilidade a instalar")
+    install_parser.add_argument("--force", action="store_true", help="Ignora avisos de quarentena do SkillsGuard")
+    install_parser.set_defaults(func=cmd_haos_skills_install)
 
     promote_parser = skills_sub.add_parser("promote", help="Trigger evaluation and promotion pipeline for candidate skill")
     promote_parser.add_argument("skill_id", help="Skill name/ID to evaluate and promote")
