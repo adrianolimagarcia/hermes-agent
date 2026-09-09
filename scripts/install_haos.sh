@@ -167,6 +167,16 @@ if [ -d "$HOME/.hermes" ]; then
     fi
 fi
 
+if command -v cargo >/dev/null 2>&1 && [ -d "$INSTALL_DIR/packages/haos-edge" ]; then
+    log_info "Building HAOS Rust Edge layer..."
+    (cd "$INSTALL_DIR/packages/haos-edge" && cargo build --release)
+    if [ -f "$INSTALL_DIR/packages/haos-edge/target/release/haos-edge" ]; then
+        cp "$INSTALL_DIR/packages/haos-edge/target/release/haos-edge" "$BIN_DIR/haos-edge"
+        chmod +x "$BIN_DIR/haos-edge"
+        log_info "HAOS Rust Edge installed to $BIN_DIR/haos-edge"
+    fi
+fi
+
 cat << EOF > "$BIN_DIR/haos"
 #!/usr/bin/env bash
 export HAOS_HOME="\${HAOS_HOME:-$HAOS_HOME}"
@@ -180,6 +190,19 @@ export HERMES_HOME="\${HAOS_HOME}"
 export HAOS_DATA_DIR="\${HAOS_DATA_DIR:-\$HAOS_HOME}"
 unset PYTHONPATH
 unset PYTHONHOME
+
+# Ultra-fast Rust Edge routing: if haos-edge is available and matches fast commands
+EDGE_SUBCMDS="status team doctor"
+FIRST_ARG="\${1:-}"
+
+if [ -x "$BIN_DIR/haos-edge" ]; then
+    if [[ "\$FIRST_ARG" == "doc" && "\${2:-}" == "search" ]]; then
+        exec "$BIN_DIR/haos-edge" doc search "\${@:3}"
+    fi
+    if [[ -n "\$FIRST_ARG" && " \$EDGE_SUBCMDS " =~ " \$FIRST_ARG " ]]; then
+        exec "$BIN_DIR/haos-edge" "\$@"
+    fi
+fi
 
 HAOS_SUBCMDS="status team doc rag graph skills eval doctor evolution scheduler intervene"
 FIRST_ARG="\${1:-}"
