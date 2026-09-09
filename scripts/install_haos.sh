@@ -161,9 +161,12 @@ export HERMES_HOME="\${HAOS_HOME}"
 export HAOS_DATA_DIR="\${HAOS_DATA_DIR:-\$HAOS_HOME}"
 unset PYTHONPATH
 unset PYTHONHOME
-export PYTHONPATH="$INSTALL_DIR:\${PYTHONPATH:-}"
-cd "$INSTALL_DIR" 2>/dev/null || true
-exec "$PYTHON" -m cli "\$@"
+if [ -x "$VENV_DIR/bin/haos" ]; then
+    exec "$VENV_DIR/bin/haos" "\$@"
+else
+    export PYTHONPATH="$INSTALL_DIR:\${PYTHONPATH:-}"
+    exec "$PYTHON" -m hermes_cli.main "\$@"
+fi
 EOF
 chmod +x "$BIN_DIR/haos"
 

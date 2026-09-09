@@ -4,7 +4,7 @@ Implements:
 1. AgentCard: Typed identity, metadata, protocol type and advertised capabilities.
 2. FederatedCapabilityResolver: Multi-tiered resolution (Local -> ANP -> A2A) with proxy creation.
 3. RemoteAgentReputationTracker: Local reputation, provenance and trust-tier enforcement.
-4. UniversalProtocolGateway: Unifies ANP, A2A, and ACP routing under a single dispatch interface.
+4. UniversalProtocolGateway: Unifies ANP, A2A, ACP, and federated MCP routing under a single dispatch interface.
 """
 
 from __future__ import annotations
@@ -59,11 +59,9 @@ class RemoteAgentReputation:
 class RemoteAgentReputationTracker:
     """Tracks performance, provenance, and reputation of external federated agents."""
 
-    def __init__(self, quarantine_threshold: float = 0.40):
+    def __init__(self, quarantine_threshold: float = 0.25):
         self.quarantine_threshold = quarantine_threshold
-        self._reputations: Dict[str, RemoteAgentReputation] = collections.defaultdict(
-            lambda: RemoteAgentReputation(agent_id="")
-        )
+        self._reputations: Dict[str, RemoteAgentReputation] = {}
 
     def record_success(self, agent_id: str, latency_ms: float) -> None:
         rep = self._get_or_create(agent_id)
@@ -168,16 +166,29 @@ class FederatedCapabilityResolver:
 
 
 class UniversalProtocolGateway:
-    """Unifies routing across ANP (Agentic Web), A2A (Agent Systems), and ACP (IDE/Clients)."""
+    """Unifies routing across ANP (Web), A2A (Agents), ACP (IDEs), and federated MCP (Tools)."""
 
     def __init__(
         self,
         event_store: EventStore,
         capability_resolver: FederatedCapabilityResolver,
+        mcp_aggregator: Optional[Any] = None,
     ):
         self.event_store = event_store
         self.capability_resolver = capability_resolver
+        self._mcp_aggregator = mcp_aggregator
         self._handlers: Dict[ProtocolType, Callable[[ProtocolEnvelope], ProtocolEnvelope]] = {}
+
+        # Default handler for MCP using aggregator if provided
+        if self._mcp_aggregator is not None:
+            self._handlers[ProtocolType.MCP] = self._handle_mcp_envelope
+
+    @property
+    def mcp_aggregator(self) -> Optional[Any]:
+        if self._mcp_aggregator is None:
+            from hermes.platform.mcp.aggregator import get_local_aggregator
+            self._mcp_aggregator = get_local_aggregator()
+        return self._mcp_aggregator
 
     def register_protocol_handler(
         self,
@@ -186,8 +197,81 @@ class UniversalProtocolGateway:
     ) -> None:
         self._handlers[protocol] = handler
 
+    def _handle_mcp_envelope(self, envelope: ProtocolEnvelope) -> ProtocolEnvelope:
+        """Handles MCP JSON-RPC protocol messages over the unified fabric."""
+        import asyncio
+        payload = envelope.payload or {}
+        method = payload.get("method", "")
+        params = payload.get("params", {})
+        request_id = payload.get("id", str(uuid.uuid4())[:8])
+
+        aggregator = self.mcp_aggregator
+
+        if method == "tools/list":
+            tools = aggregator.list_tools() if aggregator else []
+            return ProtocolEnvelope(
+                protocol_type=ProtocolType.MCP,
+                sender="gateway:mcp",
+                recipient=envelope.sender,
+                payload={"jsonrpc": "2.0", "id": request_id, "result": {"tools": tools}},
+                trust_boundary=TrustBoundary.LOCAL_SECURE,
+            )
+        elif method == "tools/call":
+            tool_name = params.get("name", "")
+            tool_args = params.get("arguments", {})
+            try:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        call_res = pool.submit(
+                            lambda: asyncio.run(aggregator.call_tool(tool_name, tool_args))
+                        ).result()
+                else:
+                    call_res = asyncio.run(aggregator.call_tool(tool_name, tool_args))
+
+                return ProtocolEnvelope(
+                    protocol_type=ProtocolType.MCP,
+                    sender="gateway:mcp",
+                    recipient=envelope.sender,
+                    payload={"jsonrpc": "2.0", "id": request_id, "result": call_res},
+                    trust_boundary=TrustBoundary.LOCAL_SECURE,
+                )
+            except Exception as exc:
+                return ProtocolEnvelope(
+                    protocol_type=ProtocolType.MCP,
+                    sender="gateway:mcp",
+                    recipient=envelope.sender,
+                    payload={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32000, "message": str(exc)},
+                    },
+                    trust_boundary=TrustBoundary.LOCAL_SECURE,
+                )
+        else:
+            return ProtocolEnvelope(
+                protocol_type=ProtocolType.MCP,
+                sender="gateway:mcp",
+                recipient=envelope.sender,
+                payload={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32601, "message": f"Method '{method}' not supported in MCP gateway handler."},
+                },
+                trust_boundary=TrustBoundary.LOCAL_SECURE,
+            )
+
     def dispatch(self, envelope: ProtocolEnvelope) -> ProtocolEnvelope:
         """Routes an envelope through the appropriate protocol handler with telemetry."""
+        # Ensure MCP default handler is lazily active if requested
+        if envelope.protocol_type == ProtocolType.MCP and ProtocolType.MCP not in self._handlers:
+            self._handlers[ProtocolType.MCP] = self._handle_mcp_envelope
+
         handler = self._handlers.get(envelope.protocol_type)
         if not handler:
             raise ValueError(f"No registered handler for protocol {envelope.protocol_type}")

@@ -303,6 +303,32 @@ def cmd_haos_evolution_analyze(args: argparse.Namespace) -> int:
             pass
 
     pending = ledger.pending()
+
+    # Ouroboros Instincts -> Skills Promotion Check (ECC-inspired)
+    try:
+        from hermes.platform.memory.instincts import InstinctStore
+        istore = InstinctStore()
+        eligible = istore.get_eligible_promotions("default")
+        if eligible:
+            from hermes.platform.evolution.models import EvolutionProposal
+            import uuid
+            for ins in eligible:
+                prop = EvolutionProposal(
+                    proposal_id=f"instinct-{ins.id}",
+                    target="skills",
+                    current_profile="procedural_memory",
+                    proposed_profile=f"skill_cluster_{ins.category}",
+                    rationale=f"Instinto '{ins.rule}' atingiu confiança {ins.confidence:.2f} com {ins.occurrences} ocorrências.",
+                    status="pending",
+                )
+                try:
+                    ledger.submit(prop)
+                    submitted += 1
+                except Exception:
+                    pass
+    except Exception as _ins_eval_err:
+        pass
+
     if getattr(args, "json", False):
         print(json.dumps({"submitted": submitted, "pending_count": len(pending), "proposals": proposals}, indent=2, ensure_ascii=False))
         return 0

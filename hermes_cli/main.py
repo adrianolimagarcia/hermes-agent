@@ -1682,6 +1682,9 @@ def cmd_chat(args):
     # --source: tag session source for filtering (e.g. 'tool' for integrations)
     if getattr(args, "source", None):
         os.environ["HERMES_SESSION_SOURCE"] = args.source
+    # --ultrawork / -u: OmO-inspired autonomous execution mode
+    if getattr(args, "ultrawork", False):
+        os.environ["HAOS_ULTRAWORK_MODE"] = "1"
 
     _pin_kanban_board_env()
     # Ativação padrão do HAOS (workers agênticos reais, integridade do runtime e catálogo de skills)
@@ -1693,6 +1696,20 @@ def cmd_chat(args):
     except Exception:
         pass
     _confirm_startup_expensive_model_override(args)
+
+    # HAOS Harness Override (e.g. --harness dsh / --harness acp)
+    harness = getattr(args, "harness", None)
+    if harness == "dsh":
+        import shutil, subprocess
+        dsh_bin = shutil.which("dsh") or os.environ.get("DSH_PATH") or "dsh"
+        query_text = getattr(args, "query", None) or "Start interactive DSH session"
+        dsh_args = [dsh_bin, "exec", "--objective", query_text, "--workdir", os.getcwd()]
+        try:
+            rc = subprocess.call(dsh_args)
+            sys.exit(rc)
+        except FileNotFoundError:
+            print(f"Error: DeepSeek Harness executable '{dsh_bin}' not found on PATH.")
+            sys.exit(1)
 
     passthrough = {k: getattr(args, k, d) for k, d in _CHAT_PASSTHROUGH}
     if use_tui:
@@ -2608,6 +2625,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "dump", "egress", "fallback", "gateway", "hooks", "import", "import-agent", "insights",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
+        "codebase-wiki",
         "model", "monitoring", "pairing", "pause", "peer", "pets", "plugins", "portal", "profile",
         "project", "proxy",
         "prompt-size",
@@ -3221,6 +3239,9 @@ def _build_cli_parser():
 
     from hermes_cli.haos_cmd import build_haos_parser
     build_haos_parser(subparsers)
+
+    from hermes_cli.codebase_wiki import build_parser as _build_codebase_wiki_parser
+    _build_codebase_wiki_parser(subparsers)
 
     build_hooks_parser(subparsers, cmd_hooks=cmd_hooks)
     build_doctor_parser(subparsers, cmd_doctor=cmd_doctor)

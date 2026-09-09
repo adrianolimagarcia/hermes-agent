@@ -18,20 +18,28 @@ Garantias:
 from __future__ import annotations
 
 import atexit
-import fcntl
 import os
-import pty
 import select
 import struct
 import subprocess
 import sys
-import termios
 import threading
 import time
 import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+try:
+    import fcntl
+    import pty
+    import termios
+    HAS_POSIX_PTY = True
+except ImportError:
+    fcntl = None  # type: ignore
+    pty = None  # type: ignore
+    termios = None  # type: ignore
+    HAS_POSIX_PTY = False
 
 _MAX_SESSIONS = 6
 _BUFFER_MAXLEN = 4000  # chunks retidos por sessão (catch-up honesto)
@@ -40,8 +48,9 @@ _GRACE_BEFORE_REAP_S = 60.0  # sessão sem drain por > grace é morta
 
 
 def _set_nonblocking(fd: int) -> None:
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+    if fcntl:
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
 
 def _winsize(rows: int, cols: int) -> bytes:
@@ -198,6 +207,11 @@ class TerminalManager:
 
     def start(self, *, cwd: Optional[str] = None,
               env: Optional[Dict[str, str]] = None) -> TerminalSession:
+        if not HAS_POSIX_PTY:
+            raise RuntimeError(
+                "O terminal PTY web embarcado requer ambiente POSIX (Linux, macOS ou WSL2 no Windows). "
+                "No Windows nativo, use o Git Bash / PowerShell ou execute o HAOS dentro do WSL2."
+            )
         with self._lock:
             self._evict_stale_locked()
             if len(self._sessions) >= self.max_sessions:

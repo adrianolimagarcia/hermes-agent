@@ -884,6 +884,16 @@ function initNavTabs() {
       if (b.dataset.tab === "events") loadUnifiedTimeline();
     });
   });
+
+  const initialPath = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase().replace("#", "");
+  if (initialPath.includes("chat") || initialPath.includes("console") || hash === "chat" || hash === "console") {
+    const cBtn = document.querySelector('#nav button[data-tab="console"]');
+    if (cBtn) cBtn.click();
+  } else if (initialPath.includes("taskboard") || hash === "taskboard") {
+    const tbBtn = document.querySelector('#nav button[data-tab="taskboard"]');
+    if (tbBtn) tbBtn.click();
+  }
 }
 
 // ---- fetch helpers ----------------------------------------------------

@@ -1,6 +1,8 @@
-"""HAOS Memory Tools: Obsidian Vault (ADRs/especificações) & GraphRAG (entidades/relacionamentos).
+"""HAOS Memory Tools: Obsidian Vault, OKF Bundles & GraphRAG.
 
-Registra as ferramentas de memória canônica e relacional do HAOS para o agente.
+Registra as ferramentas de memória canônica e relacional do HAOS para o agente,
+incluindo o Hybrid Router (OKF determinístico + RAG probabilístico local).
+Funciona 100% offline em ambiente local.
 """
 
 import json
@@ -29,6 +31,16 @@ def _get_graphrag_client():
         gr_dir.mkdir(parents=True, exist_ok=True)
     from hermes.platform.memory.graphrag import GraphRAGClient
     return GraphRAGClient(index_dir=str(gr_dir))
+
+
+def _get_hybrid_router():
+    home = Path(get_hermes_home())
+    okf_dir = home / "okf"
+    if not okf_dir.exists():
+        okf_dir.mkdir(parents=True, exist_ok=True)
+    gr_dir = home / "graphrag"
+    from hermes.platform.memory.hybrid_router import HybridKnowledgeRouter
+    return HybridKnowledgeRouter(okf_dir=okf_dir, graphrag_dir=gr_dir)
 
 
 def obsidian_get_adr(adr_id: str) -> str:
@@ -72,6 +84,44 @@ def graphrag_query(query: str, mode: str = "global") -> str:
         else:
             res = client.query_global(query)
         return json.dumps({"success": True, "results": res})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def haos_hybrid_memory_query(query: str, mode: str = "hybrid") -> str:
+    """Consulta a memória híbrida (OKF determinístico primeiro + GraphRAG fallback local)."""
+    try:
+        router = _get_hybrid_router()
+        res = router.query(query_str=query, mode=mode)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def haos_okf_save_document(
+    title: str,
+    content: str,
+    doc_type: str = "concept",
+    tags: Optional[str] = None,
+    owner: str = "",
+    folder: str = "",
+) -> str:
+    """Salva um documento canônico no formato OKF (YAML frontmatter + Markdown) localmente."""
+    try:
+        home = Path(get_hermes_home())
+        okf_dir = home / "okf"
+        from hermes.platform.memory.okf import OKFStore
+        store = OKFStore(okf_dir)
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+        doc = store.save_document(
+            title=title,
+            content=content,
+            doc_type=doc_type,
+            tags=tag_list,
+            owner=owner,
+            folder=folder,
+        )
+        return json.dumps({"success": True, "path": doc.relative_path, "title": doc.title})
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -134,5 +184,55 @@ registry.register(
     handler=lambda args, **kw: graphrag_query(
         query=args.get("query", ""),
         mode=args.get("mode", "global")
+    ),
+)
+
+registry.register(
+    name="haos_hybrid_memory_query",
+    toolset="memory",
+    schema={
+        "name": "haos_hybrid_memory_query",
+        "description": "Consulta conhecimento canônico autoritativo (OKF local) com fallback probabilístico (GraphRAG).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Termo, nome da métrica, especificação ou pergunta a consultar"},
+                "mode": {"type": "string", "enum": ["hybrid", "okf", "rag"], "description": "Modo de busca (default: hybrid)"}
+            },
+            "required": ["query"],
+        },
+    },
+    handler=lambda args, **kw: haos_hybrid_memory_query(
+        query=args.get("query", ""),
+        mode=args.get("mode", "hybrid")
+    ),
+)
+
+registry.register(
+    name="haos_okf_save_document",
+    toolset="memory",
+    schema={
+        "name": "haos_okf_save_document",
+        "description": "Salva uma especificação ou contrato canônico no formato OKF (Open Knowledge Format) localmente.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Título oficial do conceito ou contrato"},
+                "content": {"type": "string", "description": "Conteúdo Markdown e regras inegociáveis"},
+                "doc_type": {"type": "string", "description": "Tipo do documento: 'metric', 'api-contract', 'runbook', 'architecture'"},
+                "tags": {"type": "string", "description": "Tags separadas por vírgula (ex: 'revenue, kpi')"},
+                "owner": {"type": "string", "description": "Time ou autor responsável"},
+                "folder": {"type": "string", "description": "Subdiretório opcional"}
+            },
+            "required": ["title", "content"],
+        },
+    },
+    handler=lambda args, **kw: haos_okf_save_document(
+        title=args.get("title", ""),
+        content=args.get("content", ""),
+        doc_type=args.get("doc_type", "concept"),
+        tags=args.get("tags"),
+        owner=args.get("owner", ""),
+        folder=args.get("folder", ""),
     ),
 )

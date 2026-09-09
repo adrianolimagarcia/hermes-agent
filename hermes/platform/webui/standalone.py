@@ -371,13 +371,16 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         self._serve()
 
+    def do_HEAD(self) -> None:  # noqa: N802
+        self._serve()
+
     def do_POST(self) -> None:  # noqa: N802
         self._serve()
 
     # ------------------------------------------------------------------ #
     def _serve(self) -> None:
         path = urlparse(self.path).path
-        if self.command == "GET" and path in ("/", "/index.html"):
+        if self.command in ("GET", "HEAD") and (path in ("/", "/index.html", "/chat", "/console", "/terminal", "/taskboard", "/scheduler", "/ouroboros", "/agent", "/system", "/events", "/config") or not path.startswith(("/api/", "/health", "/v1/"))):
             self._serve_index()
         elif self.command == "GET" and path in ("/health", "/api/health"):
             self._send_json(200, {"status": "healthy", "service": "haos-controlplane"})
@@ -902,12 +905,15 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         body = self._read_json_body()
         cwd = str(body.get("cwd") or "").strip() or None
         env = body.get("env")
-        session = terminal_manager().start(cwd=cwd, env=env if isinstance(env, dict) else None)
-        self._send_json(200, {
-            "session_id": session.session_id,
-            "shell": session.shell,
-            "cwd": session.cwd,
-        })
+        try:
+            session = terminal_manager().start(cwd=cwd, env=env if isinstance(env, dict) else None)
+            self._send_json(200, {
+                "session_id": session.session_id,
+                "shell": session.shell,
+                "cwd": session.cwd,
+            })
+        except Exception as exc:
+            self._send_json(400, {"error": str(exc), "wsl_recommended": True})
 
     def _terminal_input(self, sid: str) -> None:
         body = self._read_json_body()

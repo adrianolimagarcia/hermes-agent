@@ -1009,9 +1009,20 @@ def build_environment_hints() -> str:
         "For non-trivial engineering tasks, decomposition, and multi-agent execution, utilize the Kanban "
         "and subagents. When tasked with implementing projects, create/update cards in the Kanban with "
         "status 'READY', execute in isolated workspaces, and remember to complete cards via complete_task "
-        "so they transition to DONE for human review."
+        "so they transition to DONE for human review.\n"
+        "PLANNING BEST PRACTICE (Vertical Slices): Decompose work into vertical end-to-end testable slices "
+        "(model/schema + business logic + automated test) rather than horizontal layers."
     )
     hints.append(haos_hint)
+    if os.environ.get("HAOS_ULTRAWORK_MODE") == "1":
+        ultrawork_hint = (
+            "ULTRAWORK MODE ACTIVE (OmO-inspired autonomous execution):\n"
+            "- Operate with maximum autonomy. Do NOT yield the turn or ask interim questions until the objective is accomplished.\n"
+            "- Decompose the goal: (1) explore context & LSP, (2) implement changes, (3) run real test suites.\n"
+            "- Verify: A coding task is NOT complete until automated tests pass cleanly in the terminal.\n"
+            "- Self-heal: If an error or test failure occurs, inspect the exact failure and iterate until it passes."
+        )
+        hints.append(ultrawork_hint)
     return "\n\n".join(h for h in (*hints, _embedder_environment_hint()) if h)
 
 

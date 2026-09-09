@@ -15,16 +15,18 @@ _HERMES_CORE_TOOLS = [
     "vision_analyze", "image_generate",
     "skills_list", "skill_view", "skill_manage",
     "obsidian_get_adr", "obsidian_save_note", "graphrag_query",
+    "mcp_gateway_status", "mcp_gateway_list_tools", "mcp_gateway_call",
+    "lsp_query",
     "browser_navigate", "browser_snapshot", "browser_click",
     "browser_type", "browser_scroll", "browser_back",
     "browser_press", "browser_get_images",
     "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
     "browser_exec",  # replaces the other browser tools when browser.backend is "browser-use"
     "text_to_speech",
-    "todo_list", "memory",
+    "todo_list", "memory", "instinct_manage",
     "session_search",
-    "clarify",
-    "execute_code", "delegate_task",
+    "clarify", "request_operator_form",
+    "execute_code", "delegate_task", "dsh_run",
     "cronjob_manage",
     "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
     "kanban_show", "kanban_list",
@@ -125,6 +127,11 @@ TOOLSETS = {
     "memory": _ts("Persistent memory across sessions (personal notes + user profile)", ["memory"]),
     "context_engine": _ts("Runtime tools exposed by the active context engine"),
     "session_search": _ts("Search and recall past conversations with summarization", ["session_search"]),
+    "mcp_gateway": _ts(
+        "HAOS Local MCP Gateway & Aggregator - federates multiple independent MCP servers "
+        "with namespacing and resilience",
+        ["mcp_gateway_status", "mcp_gateway_list_tools", "mcp_gateway_call"],
+    ),
     "project": _ts("Desktop Projects — create/switch named workspaces (GUI sessions only)", ["desktop_project"]),
     "bot_room": _ts("Verified text-only Group Chat turn capabilities"),
 
