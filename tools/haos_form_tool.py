@@ -37,7 +37,7 @@ def request_operator_form_tool(
             FormFieldSpec(
                 name=f["name"],
                 label=f.get("label", f["name"]),
-                type=f.get("type", "text"),
+                type=f.get("field_type") or f.get("type", "text"),
                 required=bool(f.get("required", True)),
                 default=f.get("default"),
                 options=f.get("options"),
@@ -92,7 +92,7 @@ REQUEST_FORM_SCHEMA = {
                     "properties": {
                         "name": {"type": "string", "description": "Field key in submission payload."},
                         "label": {"type": "string", "description": "User-facing label."},
-                        "type": {
+                        "field_type": {
                             "type": "string",
                             "enum": ["text", "number", "select", "boolean", "textarea"],
                             "description": "Input widget type.",
@@ -105,7 +105,7 @@ REQUEST_FORM_SCHEMA = {
                         },
                         "description": {"type": "string", "description": "Helper description under the field."},
                     },
-                    "required": ["name", "label", "type"],
+                    "required": ["name", "label"],
                 },
             },
             "task_id": {
