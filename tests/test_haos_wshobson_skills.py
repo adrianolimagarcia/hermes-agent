@@ -8,6 +8,7 @@ from hermes_cli.haos_cmd import cmd_haos_skills_search
 
 def test_wshobson_trusted_repo():
     assert "wshobson/agents" in TRUSTED_REPOS
+    assert "affaan-m/ECC" in TRUSTED_REPOS
 
 
 def test_wshobson_catalog_search():
@@ -24,6 +25,11 @@ def test_wshobson_catalog_search():
     py_names = [r.name for r in py_results]
     assert "async-python-patterns" in py_names
 
+    # Search ECC skills (agentic, tdd)
+    ecc_results = catalog.search("agentic-engineering")
+    assert len(ecc_results) >= 1
+    assert ecc_results[0].repo == "affaan-m/ECC"
+
 
 def test_wshobson_catalog_get():
     catalog = WshobsonCatalog()
@@ -33,6 +39,12 @@ def test_wshobson_catalog_get():
     assert meta.trust_level == "trusted"
     assert "kubernetes-operations" in meta.tags
     assert meta.path == "plugins/kubernetes-operations/skills/k8s-manifest-generator"
+
+    # Get ECC skill
+    ecc_meta = catalog.get("agentic-engineering")
+    assert ecc_meta is not None
+    assert ecc_meta.name == "agentic-engineering"
+    assert ecc_meta.repo == "affaan-m/ECC"
 
 
 def test_cmd_haos_skills_search(capsys):

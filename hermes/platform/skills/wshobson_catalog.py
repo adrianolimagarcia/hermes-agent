@@ -15,7 +15,8 @@ import urllib.error
 
 logger = logging.getLogger("haos.skills.wshobson")
 
-_CATALOG_FILE = Path(__file__).resolve().parent / "wshobson_catalog.json"
+_WSHOBSON_CATALOG_FILE = Path(__file__).resolve().parent / "wshobson_catalog.json"
+_ECC_CATALOG_FILE = Path(__file__).resolve().parent / "ecc_catalog.json"
 
 
 @dataclass
@@ -35,37 +36,41 @@ class WshobsonSkillMeta:
 
 
 class WshobsonCatalog:
-    """Catalog manager for wshobson/agents skills."""
+    """Catalog manager for wshobson/agents and affaan-m/ECC skills."""
 
     def __init__(self, catalog_path: Optional[Path] = None):
-        self._path = catalog_path or _CATALOG_FILE
+        self._path = catalog_path
         self._entries: Optional[List[WshobsonSkillMeta]] = None
 
     def _load(self) -> List[WshobsonSkillMeta]:
         if self._entries is not None:
             return self._entries
-        if not self._path.exists():
-            self._entries = []
-            return self._entries
 
-        try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-            self._entries = [
-                WshobsonSkillMeta(
-                    name=item["name"],
-                    description=item.get("description", ""),
-                    category=item.get("category", ""),
-                    repo=item.get("repo", "wshobson/agents"),
-                    path=item.get("path", ""),
-                    plugin=item.get("plugin", ""),
-                    trust_level=item.get("trust_level", "trusted"),
-                    tags=item.get("tags", []),
-                )
-                for item in raw
-            ]
-        except Exception as e:
-            logger.warning("Error reading wshobson catalog: %s", e)
-            self._entries = []
+        entries = []
+        catalog_files = [self._path] if self._path else [_WSHOBSON_CATALOG_FILE, _ECC_CATALOG_FILE]
+
+        for cpath in catalog_files:
+            if not cpath or not cpath.exists():
+                continue
+            try:
+                raw = json.loads(cpath.read_text(encoding="utf-8"))
+                for item in raw:
+                    entries.append(
+                        WshobsonSkillMeta(
+                            name=item["name"],
+                            description=item.get("description", ""),
+                            category=item.get("category", ""),
+                            repo=item.get("repo", "wshobson/agents"),
+                            path=item.get("path", ""),
+                            plugin=item.get("plugin", ""),
+                            trust_level=item.get("trust_level", "trusted"),
+                            tags=item.get("tags", []),
+                        )
+                    )
+            except Exception as e:
+                logger.warning("Error reading catalog %s: %s", cpath, e)
+
+        self._entries = entries
         return self._entries
 
     def search(self, query: str = "", limit: int = 20) -> List[WshobsonSkillMeta]:
