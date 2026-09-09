@@ -31,8 +31,8 @@ log_error() { echo -e "${RED}✗${NC} $1"; }
 log_step()  { echo -e "\n${BOLD}${BLUE}==>${NC} ${BOLD}$1${NC}"; }
 
 # Defaults
-REPO_URL="${HAOS_REPO_URL:-https://github.com/adrianolimagarcia/hermes-agent.git}"
-BRANCH="${HAOS_BRANCH:-haos-fork}"
+REPO_URL="${HAOS_REPO_URL:-https://github.com/adrianolimagarcia/HAOS.git}"
+BRANCH="${HAOS_BRANCH:-main}"
 HAOS_HOME="${HAOS_HOME:-$HOME/.haos}"
 
 if [ "$(id -u)" -eq 0 ]; then
