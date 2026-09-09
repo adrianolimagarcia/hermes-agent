@@ -94,6 +94,10 @@ class TaskSpec:
     # None == contrato vazio (aceita qualquer payload/resultado).
     task_contract: Optional[TaskIOContract] = None
 
+    # CrewAI pattern: Especificação estrita de saída esperada e inputs de upstream
+    expected_output: Optional[str] = None
+    upstream_inputs: Optional[Dict[str, Any]] = None
+
     # Emendas 8/9 — agente e modelo required vs preferred (soft):
     # required_agents  = agentes/lanes OBRIGATÓRIOS (vazio = qualquer).
     # preferred_agents = ordem de preferência entre candidatos elegíveis

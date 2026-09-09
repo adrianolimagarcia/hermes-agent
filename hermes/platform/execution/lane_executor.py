@@ -119,6 +119,14 @@ class DeterministicLaneWorker(LaneWorker):
             "executor": self.name,
             "executed_at": time.time(),
         }, indent=2))
+        if spec.get("upstream_inputs"):
+            (marker / "inputs.json").write_text(
+                json.dumps(spec["upstream_inputs"], indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        if spec.get("expected_output"):
+            (marker / "expected_output.txt").write_text(
+                str(spec["expected_output"]), encoding="utf-8"
+            )
         goal = spec.get("goal") or spec.get("title") or task_id
         summary = (
             f"## Resumo Executivo da Missão\n\n"
@@ -295,6 +303,16 @@ class HermesCliLaneWorker(LaneWorker):
         log_file = haos_dir / "worker.log"
         spec_file.write_text(json.dumps(spec, indent=2), encoding="utf-8")
 
+        # CrewAI pattern: materializa inputs tipados de upstream e contrato de output esperado
+        if spec.get("upstream_inputs"):
+            (haos_dir / "inputs.json").write_text(
+                json.dumps(spec["upstream_inputs"], indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        if spec.get("expected_output"):
+            (haos_dir / "expected_output.txt").write_text(
+                str(spec["expected_output"]), encoding="utf-8"
+            )
+
         argv = self._build_argv(spec)
         env = self._build_env(task_id, spec, workspace)
         proc = None
@@ -460,6 +478,23 @@ class HermesCliLaneWorker(LaneWorker):
         except Exception:
             pass
 
+        # CrewAI pattern: append upstream inputs and expected output contract to prompt
+        upstream_inputs = spec.get("upstream_inputs")
+        if upstream_inputs:
+            prompt += (
+                f"\n\n[UPSTREAM INPUTS (From Prior Agents)]\n"
+                f"You have received the following validated inputs from upstream tasks:\n"
+                f"{json.dumps(upstream_inputs, indent=2, ensure_ascii=False)}"
+            )
+
+        expected_output = spec.get("expected_output")
+        if expected_output:
+            prompt += (
+                f"\n\n[EXPECTED OUTPUT CONTRACT]\n"
+                f"Your final response and .haos/result.json MUST strictly satisfy the following expected output:\n"
+                f"{expected_output}"
+            )
+
         cmd += ["-q", prompt]
         return cmd
 
@@ -565,6 +600,34 @@ class HermesCliLaneWorker(LaneWorker):
             "completed": completed,
             "pending": pending,
         })
+
+        # CrewAI pattern: Output contract validation
+        contract_data = spec.get("task_contract")
+        if contract_data:
+            try:
+                from hermes.platform.execution.contracts import TaskIOContract, validate_contract
+                contract = (
+                    TaskIOContract.from_dict(contract_data)
+                    if isinstance(contract_data, dict)
+                    else contract_data
+                )
+                if isinstance(contract, TaskIOContract) and contract.outputs:
+                    violations = validate_contract(
+                        payload, contract.outputs, allow_extra_keys=contract.allow_extra_keys
+                    )
+                    if violations:
+                        evidence_dict["contract_violations"] = violations
+                        hard_violations = [
+                            v for v in violations
+                            if v.startswith(("missing_required", "type_mismatch", "enum_violation"))
+                        ]
+                        if hard_violations:
+                            raise LaneError(
+                                f"Task '{task_id}' failed expected output contract: {'; '.join(hard_violations)}"
+                            )
+            except ImportError:
+                pass
+
         return {
             "status": "COMPLETED",
             "lane": lane,
