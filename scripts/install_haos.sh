@@ -191,9 +191,64 @@ export HAOS_DATA_DIR="\${HAOS_DATA_DIR:-\$HAOS_HOME}"
 unset PYTHONPATH
 unset PYTHONHOME
 export PYTHONPATH="$INSTALL_DIR:\${PYTHONPATH:-}"
-export PYTHON="$PYTHON"
-export HERMES="$INSTALL_DIR/bin/haos"
-exec bash "$INSTALL_DIR/scripts/serve_all.sh" "\$@"
+PID_FILE="\$HAOS_HOME/controlplane.pid"
+LOG_FILE="\$HAOS_HOME/controlplane.log"
+
+ACTION="\${1:-start}"
+
+case "\$ACTION" in
+    stop)
+        if [ -f "\$PID_FILE" ]; then
+            PID=\$(cat "\$PID_FILE" 2>/dev/null || true)
+            if [ -n "\$PID" ] && kill -0 "\$PID" 2>/dev/null; then
+                kill "\$PID" 2>/dev/null || true
+                rm -f "\$PID_FILE"
+                echo "✓ HAOS Control Plane stopped (PID \$PID)."
+                exit 0
+            fi
+        fi
+        fuser -k 8788/tcp 2>/dev/null || true
+        rm -f "\$PID_FILE"
+        echo "✓ HAOS Control Plane stopped."
+        ;;
+    status)
+        if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8788/health" 2>/dev/null | grep -q "200"; then
+            LAN_IP=\$("$PYTHON" -c "from scripts.serve_controlplane import get_private_lan_ips; ips = get_private_lan_ips(); print(ips[0] if ips else '127.0.0.1')" 2>/dev/null || echo "127.0.0.1")
+            echo "✓ HAOS Control Plane is RUNNING on port 8788."
+            echo "  👉 LAN Access: http://\$LAN_IP:8788/chat"
+            echo "  👉 Localhost:  http://127.0.0.1:8788/chat"
+        else
+            echo "✗ HAOS Control Plane is NOT running."
+        fi
+        ;;
+    logs)
+        tail -f "\$LOG_FILE"
+        ;;
+    restart)
+        "\$0" stop
+        sleep 1
+        "\$0" start
+        ;;
+    start|*)
+        if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8788/health" 2>/dev/null | grep -q "200"; then
+            LAN_IP=\$("$PYTHON" -c "from scripts.serve_controlplane import get_private_lan_ips; ips = get_private_lan_ips(); print(ips[0] if ips else '127.0.0.1')" 2>/dev/null || echo "127.0.0.1")
+            echo "✓ HAOS Control Plane is already running on port 8788."
+            echo "  👉 LAN Access: http://\$LAN_IP:8788/chat"
+            echo "  👉 Localhost:  http://127.0.0.1:8788/chat"
+            exit 0
+        fi
+        mkdir -p "\$HAOS_HOME"
+        nohup "$PYTHON" "$INSTALL_DIR/scripts/serve_controlplane.py" > "\$LOG_FILE" 2>&1 &
+        CP_PID=\$!
+        echo "\$CP_PID" > "\$PID_FILE"
+        sleep 1
+        LAN_IP=\$("$PYTHON" -c "from scripts.serve_controlplane import get_private_lan_ips; ips = get_private_lan_ips(); print(ips[0] if ips else '127.0.0.1')" 2>/dev/null || echo "127.0.0.1")
+        echo "🚀 HAOS Control Plane started in background (PID \$CP_PID)."
+        echo "  👉 LAN Access: http://\$LAN_IP:8788/chat"
+        echo "  👉 Localhost:  http://127.0.0.1:8788/chat"
+        echo "  Logs: \$LOG_FILE"
+        ;;
+esac
 EOF
 chmod +x "$BIN_DIR/haos-controlplane"
 
@@ -277,17 +332,26 @@ else
     log_warn "Installation completed, but '$BIN_DIR/haos --version' returned empty. Check PATH."
 fi
 
+# 9. Auto-Start HAOS Control Plane on Private LAN IP
+log_step "Auto-starting HAOS Control Plane on private LAN..."
+"$BIN_DIR/haos-controlplane" start || true
+
+LAN_IP=$("$PYTHON" -c "from scripts.serve_controlplane import get_private_lan_ips; ips = get_private_lan_ips(); print(ips[0] if ips else '127.0.0.1')" 2>/dev/null || echo "127.0.0.1")
+
 echo ""
 echo -e "${GREEN}============================================================================${NC}"
-echo -e "${BOLD}${GREEN}🎉 HAOS (Hermes Agentic OS) is ready!${NC}"
+echo -e "${BOLD}${GREEN}🎉 HAOS (Hermes Agentic OS) is READY & Control Plane is ONLINE!${NC}"
 echo -e "${GREEN}============================================================================${NC}"
+echo ""
+echo "Access Control Plane & Interactive Chat directly from your browser:"
+if [ "$LAN_IP" != "127.0.0.1" ]; then
+    echo -e "  👉 ${BOLD}${CYAN}LAN Access (Local Network): http://${LAN_IP}:8788/chat${NC}"
+fi
+echo -e "  👉 ${BOLD}${CYAN}Localhost (This Machine):  http://127.0.0.1:8788/chat${NC}"
 echo ""
 echo "Quick Commands:"
-echo "  • CLI Interface:            haos"
-echo "  • Configuration & Status:   haos status"
-echo "  • Run Agent directly:       haos-agent"
-echo "  • Start Web Dashboards:     haos-controlplane"
-echo ""
-echo "Dashboards when running:"
-echo "  👉 HAOS Control Plane (Team Graph & Terminal): http://localhost:8788/"
+echo "  • CLI Interface:            haos chat"
+echo "  • Ultrawork Autonomous:     haos chat -u \"sua missão\""
+echo "  • Status & Diagnostics:     haos status"
+echo "  • Control Plane Manager:    haos-controlplane [start|stop|restart|status|logs]"
 echo "============================================================================"
