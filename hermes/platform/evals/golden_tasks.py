@@ -187,3 +187,35 @@ class GoldenTasksRunner:
             assertions_passed=len(spec.deterministic_assertions),
             assertions_total=len(spec.deterministic_assertions),
         )
+
+
+def run_benchmark_and_record(
+    task_ids: Optional[List[str]] = None,
+    label: str = "current",
+    baseline_store: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Execute the Golden Tasks benchmark suite and optionally record the baseline snapshot."""
+    runner = GoldenTasksRunner()
+    results = runner.run_suite(task_ids)
+
+    passed_count = sum(1 for r in results if r.success)
+    total_count = len(results)
+    total_tokens = sum(r.tokens_consumed for r in results)
+    total_duration = sum(r.duration_sec for r in results)
+    score_pct = (passed_count / total_count * 100.0) if total_count > 0 else 0.0
+
+    metrics = {
+        "suite": "golden_tasks",
+        "label": label,
+        "tasks_total": total_count,
+        "tasks_passed": passed_count,
+        "score_percent": round(score_pct, 1),
+        "total_tokens": total_tokens,
+        "total_duration_sec": round(total_duration, 2),
+        "tasks": [dataclasses.asdict(r) for r in results],
+    }
+
+    if baseline_store is not None:
+        baseline_store.save(suite_id="golden_tasks", label=label, metrics=metrics)
+
+    return metrics

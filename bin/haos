@@ -66,10 +66,19 @@ def main():
     doc_parser = subparsers.add_parser("doctor", help="Valida integridade, caminhos e permissões do HAOS")
     doc_parser.add_argument("--json", action="store_true", help="Output em JSON")
 
+    # Command: eval
+    eval_parser = subparsers.add_parser("eval", help="Executa a bateria de avaliação Golden Tasks e registra baseline")
+    eval_parser.add_argument("--tasks", type=str, help="IDs das tarefas (ex: G001,G002)")
+    eval_parser.add_argument("--label", type=str, default="current", help="Rótulo da medição")
+    eval_parser.add_argument("--json", action="store_true", help="Output em JSON")
+
     args = parser.parse_args()
 
     if args.command == "run":
         asyncio.run(execute_task(args))
+    elif args.command == "eval":
+        from hermes_cli.haos_cmd import cmd_haos_eval
+        sys.exit(cmd_haos_eval(args))
     elif args.command == "doctor":
         from hermes.platform.diagnostics.doctor import HAOSDoctor
         sys.exit(HAOSDoctor.print_terminal_report(json_output=args.json))

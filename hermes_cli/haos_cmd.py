@@ -493,6 +493,46 @@ def cmd_haos_team_intervene(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_haos_eval(args: argparse.Namespace) -> int:
+    """Executes 'hermes haos eval [--tasks G001,G002] [--label <label>] [--json]'."""
+    from hermes.platform.evals.golden_tasks import run_benchmark_and_record, GOLDEN_TASKS
+    from hermes.platform.evals.baselines import BaselineStore
+    from hermes_constants import get_hermes_home
+    from pathlib import Path
+    import json
+
+    task_ids = None
+    if getattr(args, "tasks", None):
+        task_ids = [t.strip() for t in args.tasks.split(",") if t.strip()]
+
+    label = getattr(args, "label", None) or "current"
+    home = Path(get_hermes_home())
+    db_path = home / "eval_baselines.db"
+    store = BaselineStore(db_path=str(db_path))
+
+    metrics = run_benchmark_and_record(task_ids=task_ids, label=label, baseline_store=store)
+
+    if getattr(args, "json", False):
+        print(json.dumps(metrics, indent=2, ensure_ascii=False))
+        return 0
+
+    print("=" * 72)
+    print("🎯 HAOS GOLDEN TASKS EVALUATION HARNESS")
+    print(f"[*] Label:    {label}")
+    print(f"[*] Tasks:    {metrics['tasks_passed']}/{metrics['tasks_total']} passed ({metrics['score_percent']}%)")
+    print(f"[*] Duration: {metrics['total_duration_sec']}s | Tokens: {metrics['total_tokens']}")
+    print("=" * 72)
+    print(f"{'TASK':<6} {'NAME':<30} {'STATUS':<8} {'TOKENS':<8} {'ASSERTIONS'}")
+    for t in metrics["tasks"]:
+        status_str = "✓ PASS" if t["success"] else "✗ FAIL"
+        spec = GOLDEN_TASKS.get(t["task_id"])
+        spec_name = spec.name if spec else t["task_id"]
+        print(f"{t['task_id']:<6} {spec_name[:28]:<30} {status_str:<8} {t['tokens_consumed']:<8} {t['assertions_passed']}/{t['assertions_total']}")
+    print("=" * 72)
+    print(f"✓ Baseline snapshot recorded in {db_path}")
+    return 0
+
+
 def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     """Builds and registers the parser for 'hermes haos'."""
     haos_parser = subparsers.add_parser(
@@ -571,6 +611,13 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     promote_parser.add_argument("skill_id", help="Skill name/ID to evaluate and promote")
     promote_parser.add_argument("--version", help="Specific skill version (optional)")
     promote_parser.set_defaults(func=cmd_haos_skills_promote)
+
+    # hermes haos eval [--tasks <ids>] [--label <label>] [--json]
+    eval_parser = haos_sub.add_parser("eval", aliases=["benchmark"], help="Executa o benchmark Golden Tasks e gera nota objetiva")
+    eval_parser.add_argument("--tasks", help="Tarefas a executar (ex: G001,G002 ou vazio para todas)")
+    eval_parser.add_argument("--label", default="current", help="Rótulo da medição (ex: baseline-v1, deepseek-v4)")
+    eval_parser.add_argument("--json", action="store_true", help="Output metrics as JSON")
+    eval_parser.set_defaults(func=cmd_haos_eval)
 
     # Default fallback when 'hermes haos' is run without subcommands
     haos_parser.set_defaults(func=lambda args: haos_parser.print_help() or 0)
