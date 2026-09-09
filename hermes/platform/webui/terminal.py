@@ -178,7 +178,10 @@ class TerminalSession:
     def kill(self) -> None:
         try:
             if self.proc.poll() is None:
-                self.proc.kill()
+                try:
+                    os.killpg(os.getpgid(self.proc.pid), 9)
+                except Exception:
+                    self.proc.kill()
         except OSError:
             pass
         try:

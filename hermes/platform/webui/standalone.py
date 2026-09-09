@@ -1226,6 +1226,33 @@ def make_standalone_server(
 
     server = HAOSThreadingHTTPServer((host, port), handler_factory)
     base = f"http://{host}:{server.server_address[1]}"
+
+    # Background WAL auto-checkpoint: prevents unbounded WAL accumulation across long runs
+    def _wal_auto_maintenance():
+        while True:
+            time.sleep(300)  # Checkpoint every 5 minutes
+            try:
+                candidate_dbs = [
+                    state.kanban_db,
+                    state.events_db,
+                    state.data_dir / "state.db",
+                    state.data_dir / "memory" / "reconciled_memories.db",
+                    state.data_dir / "memory" / "ragflow.db",
+                    Path.home() / ".hermes" / "state.db",
+                    Path.home() / ".hermes" / "kanban.db",
+                ]
+                for db in candidate_dbs:
+                    if db and Path(db).exists():
+                        try:
+                            with sqlite3.connect(str(db), timeout=5.0) as conn:
+                                conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    threading.Thread(target=_wal_auto_maintenance, daemon=True, name="haos-wal-checkpoint").start()
+
     return server, state, base
 
 

@@ -49,6 +49,24 @@ def main():
 
     data_dir = os.environ.get("HAOS_DATA_DIR", "/tmp/haos_shared_data")
     
+    # Singleton lock: prevent duplicate instances fighting for the same port/socket
+    lock_path = Path(data_dir) / f"controlplane_{port}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = open(lock_path, "a+")
+    try:
+        import fcntl
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.write(f"{os.getpid()}\n")
+        lock_file.flush()
+    except (BlockingIOError, OSError):
+        lock_file.seek(0)
+        holder_pid = lock_file.read().strip()
+        lock_file.close()
+        print(f"⚠️  [HAOS Singleton] Control Plane is already active on port {port} (PID {holder_pid}). Exiting duplicate.")
+        sys.exit(0)
+
     print("=" * 72)
     print("🚀 HAOS STANDALONE CONTROL PLANE SERVER")
     print(f"[*] Bind Address: {host}")
